@@ -4,7 +4,7 @@
       "root": "frontend/"
     },
     "my_backend": {
-      "root": "backend/",
+      "root": "api/",
       "framework": "fastapi",
       "entrypoint": "server:app"
     }
