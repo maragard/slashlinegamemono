@@ -143,12 +143,12 @@ def load_current_player():
         statline = "/".join(parts[2:]).strip("'")
 
 
-@app.get("/start")
+@app.get("/api/start")
 async def starting_info():
     return {"hint": statline}
 
 
-@app.post("/guess-player")
+@app.post("/api/guess-player")
 async def guess_player(request: Request):
     try:
         data = await request.json()
@@ -181,7 +181,7 @@ async def guess_player(request: Request):
     return {"success": False, "msg": "Try again"}
 
 
-@app.post("/get-players")
+@app.post("/api/get-players")
 async def search_string(request: Request):
     body = await request.body()
     content_type = request.headers.get("content-type", "")
