@@ -6,6 +6,7 @@ import sqlite3
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.middleware.cors import CORSMiddleware
 from urllib.parse import parse_qs
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +18,14 @@ NAME_DETECTOR = re.compile(r"\w+(\s){1}\w+")
 
 app = FastAPI()
 application = app
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://slashlinegame.com", "https://www.slashlinegame.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 chosen = ""
 statline = ""
