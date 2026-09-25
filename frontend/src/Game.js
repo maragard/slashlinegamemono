@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 
-const API_URL = 'http://localhost:8000/guess-player/';
-const START_URL = 'http://localhost:8000/start/';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_URL = `${API_BASE_URL}/guess-player`;
+const START_URL = `${API_BASE_URL}/start`;
 
 export default function Game() {
   const [playerName, setPlayerName] = useState('');
