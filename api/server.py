@@ -21,7 +21,7 @@ application = app
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://slashlinegame.com", "https://www.slashlinegame.com"],
+    allow_origins=["https://slashlinegame.com", "https://www.slashlinegame.com", "https://unnamedgamefront-git-preview-slashline.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -114,7 +114,7 @@ def select_new_player():
 
     conn.close()
 
-    with open(PLAYER_FILE, "w", encoding="utf-8") as file:
+    with open(PLAYER_FILE, "a", encoding="utf-8") as file:
         if player:
             values = [
                 f"'{value}'"
@@ -130,9 +130,6 @@ def load_current_player():
 
     if not os.path.exists(PLAYER_FILE) or os.path.getsize(PLAYER_FILE) == 0:
         select_new_player()
-
-    if not os.path.exists(PLAYER_FILE):
-        return
 
     with open(PLAYER_FILE, "r", encoding="utf-8") as file:
         target = file.read()
