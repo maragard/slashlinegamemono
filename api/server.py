@@ -143,6 +143,18 @@ def load_current_player():
         statline = "/".join(parts[2:]).strip("'")
 
 
+@app.get("/api/health")
+async def health_check():
+    return JSONResponse(content={"status": "ok"})
+
+
+@app.get("/api/reset")
+async def reset_game():
+    select_new_player()
+    load_current_player()
+    return JSONResponse(content={"msg": "Game reset successfully"})
+
+
 @app.get("/api/start")
 async def starting_info():
     return {"hint": statline}
