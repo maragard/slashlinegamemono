@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const API_BASE_URL = process.env.PROD_APP_API_URL || PREVIEW_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.PROD_APP_API_URL || process.env.PREVIEW_API_URL || 'http://localhost:8000';
 const API_URL = `${API_BASE_URL}/guess-player`;
 const START_URL = `${API_BASE_URL}/start`;
 
