@@ -4,28 +4,18 @@ import os
 import re
 import sqlite3
 import uvicorn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Dict, List, Any
 from urllib.parse import parse_qs
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "players-temp.db")
 CSV_PATH = os.path.join(BASE_DIR, "players.csv")
-PLAYER_FILE = os.path.join(BASE_DIR, "todaysplayer.pkl")
 
 NAME_DETECTOR = re.compile(r"\w+(\s){1}\w+")
-
-app = FastAPI()
-application = app
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://slashlinegame.com", "https://www.slashlinegame.com", "https://unnamedgamefront-git-preview-slashline.vercel.app"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 chosen = ""
 statline = ""
@@ -133,8 +123,6 @@ def select_new_player():
     curr.execute ("DELETE FROM todays_player")
     # Set new value for todays_player
     print(player)
-    # player = [datum[0] for datum in player]
-    # print(player)
     curr.execute (
             """
             INSERT INTO todays_player
@@ -152,30 +140,47 @@ def select_new_player():
 def load_current_player():
     global chosen, statline
 
-    conn = sqlite3.connect(DB_PATH)
-    curr = conn.cursor()
+    with sqlite3.connect(DB_PATH) as conn:
+        curr = conn.cursor()
 
-    with open(PLAYER_FILE, "r", encoding="utf-8") as file:
-        target = file.read()
-
-    parts = target.split(", ")
-    if len(parts) >= 5:
-        chosen = parts[1].strip("'")
-        statline = "/".join(parts[2:]).strip("'")
-    conn = sqlite3.connect(DB_PATH)
-    curr = conn.cursor()
-
-    target_player = curr.execute(
-        """
-        SELECT name, team, position, debut_year, retirement_year, plate_apps, avg, obp, slg
-        FROM todays_player
-        LIMIT 1
-        """
-    ).fetchone()
-
-    print(target_player)
+        target = curr.execute (
+            """
+            SELECT name, team, position, debut_year, retirement_year, plate_apps, avg, obp, slg
+            FROM todays_player
+            """
+        ).fetchone()
+        
+    print(target)
+    chosen = target
+    statline = "/".join(target[-3:]).strip("'")
+    return
 
 
+@asynccontextmanager
+async def lifecycle(app: FastAPI):
+    # BEFORE yield: setup backend
+    init_db()
+    select_new_player()
+    load_current_player()
+    yield
+    # AFTER yield: any cleanup operations
+
+app = FastAPI(
+    lifespan=lifecycle
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://slashlinegame.com", 
+        "https://www.slashlinegame.com", 
+        "https://unnamedgamefront-git-preview-slashline.vercel.app"
+        "http://localhost:3000"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/api/health")
@@ -184,7 +189,7 @@ async def health_check():
 
 
 @app.get("/api/reset")
-async def reset_game():
+def reset_game():
     try:
         select_new_player()
     except ValueError as e:
@@ -214,8 +219,8 @@ async def guess_player(request: Request):
     if unique_id is None and not guess_name:
         return PlainTextResponse("Missing necessary fields", status_code=400)
 
-    if guess_name and guess_name == chosen:
-        return {"success": True, "msg": "You did it!"}
+    if guess_name and guess_name == chosen[0].strip("'"):
+        return JSONResponse(content={"success": True, "msg": "You did it!"})
 
     if unique_id is not None:
         conn = sqlite3.connect(DB_PATH)
@@ -225,11 +230,11 @@ async def guess_player(request: Request):
         ).fetchone()
         conn.close()
 
-        success = bool(player and player[0] == chosen)
-        return {
+        success = bool(player and player[0] == chosen[0].strip("'"))
+        return JSONResponse({
             "success": success,
             "msg": "You did it!" if success else "Try again",
-        }
+        })
 
     return {"success": False, "msg": "Try again"}
 
@@ -273,9 +278,6 @@ def get_eligible_names():
         names = [row[0] for row in curr.fetchall()]
         
     return JSONResponse(content={'names': names})
-
-init_db()
-load_current_player()
 
 
 if __name__ == "__main__":
