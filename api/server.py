@@ -4,38 +4,32 @@ import os
 import re
 import sqlite3
 import uvicorn
-from fastapi import FastAPI, Request
+from contextlib import asynccontextmanager, closing
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Dict, List, Any
 from urllib.parse import parse_qs
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "players-temp.db")
+DB_URI = "file:players?mode=memory&cache=shared"
 CSV_PATH = os.path.join(BASE_DIR, "players.csv")
-PLAYER_FILE = os.path.join(BASE_DIR, "todaysplayer.pkl")
 
 NAME_DETECTOR = re.compile(r"\w+(\s){1}\w+")
-
-app = FastAPI()
-application = app
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://slashlinegame.com", "https://www.slashlinegame.com", "https://unnamedgamefront-git-preview-slashline.vercel.app"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 chosen = ""
 statline = ""
 
 
-def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
-    conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
+def _connect_db():
+    return sqlite3.connect(DB_URI, uri=True)
 
-    cur.execute(
+
+def init_db(csv_path=CSV_PATH):
+    conn = _connect_db()
+    curr = conn.cursor()
+
+    curr.execute(
         """
         CREATE TABLE IF NOT EXISTS players (
             id INTEGER PRIMARY KEY,
@@ -52,14 +46,27 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
         """
     )
 
-    cur.execute("SELECT COUNT(1) FROM players")
-    count = cur.fetchone()[0]
+    curr.execute(
+        """
+        CREATE TABLE IF NOT EXISTS todays_player (
+            name TEXT PRIMARY KEY,
+            team TEXT,
+            position TEXT,
+            debut_year TEXT,
+            retirement_year TEXT,
+            avg TEXT,
+            obp TEXT,
+            slg TEXT
+        )
+        """
+    )
+
+    curr.execute("SELECT COUNT(1) FROM players")
+    count = curr.fetchone()[0]
 
     if count == 0 and os.path.exists(csv_path):
         with open(csv_path, newline="", encoding="latin-1") as file:
-            reader = csv.DictReader(file)
-
-            for row in reader:
+            for row in csv.DictReader(file):
                 player_id = int(row["id"]) if row.get("id") else None
                 values = (
                     row.get("Player Name"),
@@ -74,7 +81,7 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
                 )
 
                 if player_id is None:
-                    cur.execute(
+                    curr.execute(
                         """
                         INSERT INTO players
                         (name, team, position, debut_year, retirement_year,
@@ -84,7 +91,7 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
                         values,
                     )
                 else:
-                    cur.execute(
+                    curr.execute(
                         """
                         INSERT OR REPLACE INTO players
                         (id, name, team, position, debut_year, retirement_year,
@@ -100,44 +107,83 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
 
 
 def select_new_player():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    conn = _connect_db()
+    curr = conn.cursor()
 
-    player = cursor.execute(
+    # Find new player
+    player = curr.execute (
         """
-        SELECT id, name, avg, obp, slg
+        SELECT id, name, team, position, debut_year, retirement_year, avg, obp, slg
         FROM players
         ORDER BY RANDOM()
         LIMIT 1
         """
     ).fetchone()
 
+    # Reset todays_player
+    curr.execute ("DELETE FROM todays_player")
+    # Set new value for todays_player
+    print(player)
+    curr.execute (
+            """
+            INSERT INTO todays_player
+            (name, team, position, debut_year, retirement_year, avg, obp, slg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            player[1:],
+        )
+
+    conn.commit()
     conn.close()
-
-    with open(PLAYER_FILE, "a", encoding="utf-8") as file:
-        if player:
-            values = [
-                f"'{value}'"
-                if NAME_DETECTOR.match(str(value))
-                else str(value)
-                for value in player
-            ]
-            file.write(", ".join(values))
-
+    return
 
 def load_current_player():
     global chosen, statline
 
-    if not os.path.exists(PLAYER_FILE) or os.path.getsize(PLAYER_FILE) == 0:
+    with closing(_connect_db()) as conn:
+        curr = conn.cursor()
+
+        target = curr.execute (
+            """
+            SELECT name, team, position, debut_year, retirement_year, avg, obp, slg
+            FROM todays_player
+            """
+        ).fetchone()
+        
+    print(target)
+    chosen = target
+    statline = "/".join(target[-3:]).strip("'")
+    return
+
+
+@asynccontextmanager
+async def lifecycle(app: FastAPI):
+    # BEFORE yield: setup backend
+    database = _connect_db()
+    try:
+        init_db()
         select_new_player()
+        load_current_player()
+        yield
+    finally:
+        database.close()
 
-    with open(PLAYER_FILE, "r", encoding="utf-8") as file:
-        target = file.read()
+app = FastAPI(
+    lifespan=lifecycle
+)
 
-    parts = target.split(", ")
-    if len(parts) >= 5:
-        chosen = parts[1].strip("'")
-        statline = "/".join(parts[2:]).strip("'")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://slashlinegame.com", 
+        "https://www.slashlinegame.com", 
+        "https://unnamedgamefront-git-preview-slashline.vercel.app"
+        "http://localhost:3000"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/api/health")
@@ -146,10 +192,16 @@ async def health_check():
 
 
 @app.get("/api/reset")
-async def reset_game():
-    select_new_player()
-    load_current_player()
-    return JSONResponse(content={"msg": "Game reset successfully"})
+def reset_game():
+    try:
+        select_new_player()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    else:   
+        load_current_player()
+        return JSONResponse(content={"msg": "Game reset successfully"})
 
 
 @app.get("/api/start")
@@ -170,22 +222,21 @@ async def guess_player(request: Request):
     if unique_id is None and not guess_name:
         return PlainTextResponse("Missing necessary fields", status_code=400)
 
-    if guess_name and guess_name == chosen:
-        return {"success": True, "msg": "You did it!"}
+    if guess_name and guess_name == chosen[0].strip("'"):
+        return JSONResponse(content={"success": True, "msg": "You did it!"})
 
     if unique_id is not None:
-        conn = sqlite3.connect(DB_PATH)
-        player = conn.execute(
-            "SELECT name FROM players WHERE id = ?",
-            (unique_id,),
-        ).fetchone()
-        conn.close()
+        with closing(_connect_db()) as conn:
+            player = conn.execute(
+                "SELECT name FROM players WHERE id = ?",
+                (unique_id,),
+            ).fetchone()
 
-        success = bool(player and player[0] == chosen)
-        return {
+        success = bool(player and player[0] == chosen[0].strip("'"))
+        return JSONResponse({
             "success": success,
             "msg": "You did it!" if success else "Try again",
-        }
+        })
 
     return {"success": False, "msg": "Try again"}
 
@@ -214,10 +265,22 @@ async def search_string(request: Request):
 
     return {"received_string": value}
 
-
-init_db()
-load_current_player()
+@app.get("/api/eligible-names")
+def get_eligible_names():
+    """
+    Returns a flat array of all valid guessing names.
+    Cached on the client to power instant autocomplete.
+    """
+    with closing(_connect_db()) as conn:
+        curr = conn.cursor()
+        # Select only the column you need to keep payload tiny
+        curr.execute ("SELECT name FROM players ORDER BY name_string ASC")
+        
+        # Flatten tuple results: [("Alice",), ("Bob",)] -> ["Alice", "Bob"]
+        names = [row[0] for row in curr.fetchall()]
+        
+    return JSONResponse(content={'names': names})
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
