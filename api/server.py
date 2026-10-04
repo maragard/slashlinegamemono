@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 import os
 import re
@@ -187,7 +188,7 @@ async def lifecycle(app: FastAPI):
     """
     Lifecycle function for backend.
     """
-    # BEFORE yield: setup backend
+    # on_event("startup"): setup backend
     database = _connect_db()
     init_db()
     select_new_player()
@@ -196,7 +197,7 @@ async def lifecycle(app: FastAPI):
 
     yield
 
-    # AFTER yield: clean up memory
+    # on_event("shutdown"): clean up memory
     database.close()
 
 app = FastAPI(
@@ -313,8 +314,15 @@ def suggest_names(q: str = Query(..., min_length=2)):
             matches.append(name)
         if len(matches) >= 8:  # Hard limit on returned elements protects your list
             break
-            
-    return matches
+
+    etag = hashlib.sha256(json.dumps(matches).encode("utf-8")).hexdigest()
+    return JSONResponse(
+        content=matches,
+        headers={
+            "Cache-Control": "private, max-age=3600",
+            "ETag": f'"{etag}"',
+        },
+    )
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
