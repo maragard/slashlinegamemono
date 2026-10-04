@@ -33,9 +33,9 @@ statline = ""
 
 def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
     conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
+    curr = conn.cursor()
 
-    cur.execute(
+    curr.execute(
         """
         CREATE TABLE IF NOT EXISTS players (
             id INTEGER PRIMARY KEY,
@@ -52,7 +52,7 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
         """
     )
 
-    cur.execute(
+    curr.execute(
         """
         CREATE TABLE IF NOT EXISTS todays_player (
             name TEXT PRIMARY KEY,
@@ -68,8 +68,8 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
         """
     )
 
-    cur.execute("SELECT COUNT(1) FROM players")
-    count = cur.fetchone()[0]
+    curr.execute("SELECT COUNT(1) FROM players")
+    count = curr.fetchone()[0]
 
     if count == 0 and os.path.exists(csv_path):
         with open(csv_path, newline="", encoding="latin-1") as file:
@@ -90,7 +90,7 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
                 )
 
                 if player_id is None:
-                    cur.execute(
+                    curr.execute(
                         """
                         INSERT INTO players
                         (name, team, position, debut_year, retirement_year,
@@ -100,7 +100,7 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
                         values,
                     )
                 else:
-                    cur.execute(
+                    curr.execute(
                         """
                         INSERT OR REPLACE INTO players
                         (id, name, team, position, debut_year, retirement_year,
@@ -117,10 +117,10 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
 
 def select_new_player():
     conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    curr = conn.cursor()
 
     # Find new player
-    player = cursor.execute(
+    player = curr.execute (
         """
         SELECT id, name, team, position, debut_year, retirement_year, plate_apps, avg, obp, slg
         FROM players
@@ -130,12 +130,12 @@ def select_new_player():
     ).fetchone()
 
     # Reset todays_player
-    cursor.execute("DELETE FROM todays_player")
+    curr.execute ("DELETE FROM todays_player")
     # Set new value for todays_player
     print(player)
     # player = [datum[0] for datum in player]
     # print(player)
-    cursor.execute(
+    curr.execute (
             """
             INSERT INTO todays_player
             (name, team, position, debut_year, retirement_year,
@@ -147,27 +147,13 @@ def select_new_player():
 
     conn.commit()
     conn.close()
-
-    try:
-        with open(PLAYER_FILE, "a", encoding="utf-8") as file:
-            if player:
-                values = [
-                    f"'{value}'"
-                    if NAME_DETECTOR.match(str(value))
-                    else str(value)
-                    for value in player
-                ]
-                file.write(", ".join(values))
-    except OSError:
-        print("Not on local")
-    
     return
 
 def load_current_player():
     global chosen, statline
 
-    if not os.path.exists(PLAYER_FILE) or os.path.getsize(PLAYER_FILE) == 0:
-        select_new_player()
+    conn = sqlite3.connect(DB_PATH)
+    curr = conn.cursor()
 
     with open(PLAYER_FILE, "r", encoding="utf-8") as file:
         target = file.read()
@@ -279,12 +265,12 @@ def get_eligible_names():
     Cached on the client to power instant autocomplete.
     """
     with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
+        curr = conn.cursor()
         # Select only the column you need to keep payload tiny
-        cursor.execute("SELECT name FROM players ORDER BY name_string ASC")
+        curr.execute ("SELECT name FROM players ORDER BY name_string ASC")
         
         # Flatten tuple results: [("Alice",), ("Bob",)] -> ["Alice", "Bob"]
-        names = [row[0] for row in cursor.fetchall()]
+        names = [row[0] for row in curr.fetchall()]
         
     return JSONResponse(content={'names': names})
 
