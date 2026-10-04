@@ -22,7 +22,7 @@ statline = ""
 
 
 def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(":memory:")
     curr = conn.cursor()
 
     curr.execute(
@@ -50,7 +50,6 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
             position TEXT,
             debut_year TEXT,
             retirement_year TEXT,
-            plate_apps TEXT,
             avg TEXT,
             obp TEXT,
             slg TEXT
@@ -63,9 +62,7 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
 
     if count == 0 and os.path.exists(csv_path):
         with open(csv_path, newline="", encoding="latin-1") as file:
-            reader = csv.DictReader(file)
-
-            for row in reader:
+            for row in csv.DictReader(file):
                 player_id = int(row["id"]) if row.get("id") else None
                 values = (
                     row.get("Player Name"),
@@ -112,7 +109,7 @@ def select_new_player():
     # Find new player
     player = curr.execute (
         """
-        SELECT id, name, team, position, debut_year, retirement_year, plate_apps, avg, obp, slg
+        SELECT id, name, team, position, debut_year, retirement_year, avg, obp, slg
         FROM players
         ORDER BY RANDOM()
         LIMIT 1
@@ -126,9 +123,8 @@ def select_new_player():
     curr.execute (
             """
             INSERT INTO todays_player
-            (name, team, position, debut_year, retirement_year,
-                plate_apps, avg, obp, slg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (name, team, position, debut_year, retirement_year, avg, obp, slg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             player[1:],
         )
