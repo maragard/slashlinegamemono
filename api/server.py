@@ -55,8 +55,7 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS todays_player (
-            id INTEGER PRIMARY KEY,
-            name TEXT,
+            name TEXT PRIMARY KEY,
             team TEXT,
             position TEXT,
             debut_year TEXT,
@@ -133,6 +132,9 @@ def select_new_player():
     # Reset todays_player
     cursor.execute("DELETE FROM todays_player")
     # Set new value for todays_player
+    print(player)
+    # player = [datum[0] for datum in player]
+    # print(player)
     cursor.execute(
             """
             INSERT INTO todays_player
@@ -143,6 +145,7 @@ def select_new_player():
             player[1:],
         )
 
+    conn.commit()
     conn.close()
 
     try:
