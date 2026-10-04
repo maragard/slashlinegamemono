@@ -183,7 +183,7 @@ def get_eligible_names():
 ###############################################################################
 
 @asynccontextmanager
-async def lifecycle(app: FastAPI) -> AsyncGenerator[Any, Any, Any]:
+async def lifecycle(app: FastAPI):
     """
     Lifecycle function for backend.
     """
@@ -193,7 +193,7 @@ async def lifecycle(app: FastAPI) -> AsyncGenerator[Any, Any, Any]:
     select_new_player()
     load_current_player()
     get_eligible_names()
-    
+
     yield
 
     # AFTER yield: clean up memory
