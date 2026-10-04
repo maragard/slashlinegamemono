@@ -4,7 +4,7 @@ import os
 import re
 import sqlite3
 import uvicorn
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +12,7 @@ from typing import Dict, List, Any
 from urllib.parse import parse_qs
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "players-temp.db")
+DB_URI = "file:players?mode=memory&cache=shared"
 CSV_PATH = os.path.join(BASE_DIR, "players.csv")
 
 NAME_DETECTOR = re.compile(r"\w+(\s){1}\w+")
@@ -21,8 +21,12 @@ chosen = ""
 statline = ""
 
 
-def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
-    conn = sqlite3.connect(":memory:")
+def _connect_db():
+    return sqlite3.connect(DB_URI, uri=True)
+
+
+def init_db(csv_path=CSV_PATH):
+    conn = _connect_db()
     curr = conn.cursor()
 
     curr.execute(
@@ -103,7 +107,7 @@ def init_db(db_path=DB_PATH, csv_path=CSV_PATH):
 
 
 def select_new_player():
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect_db()
     curr = conn.cursor()
 
     # Find new player
@@ -136,12 +140,12 @@ def select_new_player():
 def load_current_player():
     global chosen, statline
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(_connect_db()) as conn:
         curr = conn.cursor()
 
         target = curr.execute (
             """
-            SELECT name, team, position, debut_year, retirement_year, plate_apps, avg, obp, slg
+            SELECT name, team, position, debut_year, retirement_year, avg, obp, slg
             FROM todays_player
             """
         ).fetchone()
@@ -155,11 +159,14 @@ def load_current_player():
 @asynccontextmanager
 async def lifecycle(app: FastAPI):
     # BEFORE yield: setup backend
-    init_db()
-    select_new_player()
-    load_current_player()
-    yield
-    # AFTER yield: any cleanup operations
+    database = _connect_db()
+    try:
+        init_db()
+        select_new_player()
+        load_current_player()
+        yield
+    finally:
+        database.close()
 
 app = FastAPI(
     lifespan=lifecycle
@@ -219,12 +226,11 @@ async def guess_player(request: Request):
         return JSONResponse(content={"success": True, "msg": "You did it!"})
 
     if unique_id is not None:
-        conn = sqlite3.connect(DB_PATH)
-        player = conn.execute(
-            "SELECT name FROM players WHERE id = ?",
-            (unique_id,),
-        ).fetchone()
-        conn.close()
+        with closing(_connect_db()) as conn:
+            player = conn.execute(
+                "SELECT name FROM players WHERE id = ?",
+                (unique_id,),
+            ).fetchone()
 
         success = bool(player and player[0] == chosen[0].strip("'"))
         return JSONResponse({
@@ -265,7 +271,7 @@ def get_eligible_names():
     Returns a flat array of all valid guessing names.
     Cached on the client to power instant autocomplete.
     """
-    with sqlite3.connect(DB_PATH) as conn:
+    with closing(_connect_db()) as conn:
         curr = conn.cursor()
         # Select only the column you need to keep payload tiny
         curr.execute ("SELECT name FROM players ORDER BY name_string ASC")
