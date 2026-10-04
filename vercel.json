@@ -12,5 +12,16 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": { "service": "my_backend" } },
     { "source": "/(.*)", "destination": { "service": "my_frontend" } }
+  ],
+  "headers": [
+    {
+      "source": "/api/suggest",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, max-age=3600, must-revalidate"
+        }
+      ]
+    }
   ]
 }
