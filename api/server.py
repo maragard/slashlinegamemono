@@ -110,6 +110,7 @@ def init_db(csv_path=CSV_PATH):
             conn.commit()
     return
 
+
 def select_new_player():
     with closing(_connect_db()) as conn:
         conn.text_factory = lambda data: str(data, encoding="latin1", errors="surrogateescape")
@@ -179,7 +180,7 @@ def get_eligible_names():
         print(f"Loaded {len(GLOBAL_NAMES_CACHE)} names safely into backend memory.")
 
 ###############################################################################
-##############           Application Endpoints                  ###############
+##############               Application Setup                  ###############
 ###############################################################################
 
 @asynccontextmanager
@@ -199,9 +200,11 @@ async def lifecycle(app: FastAPI):
     # on_event("shutdown"): clean up memory
     database.close()
 
+
 app = FastAPI(
     lifespan=lifecycle
 )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -216,6 +219,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+###############################################################################
+##############           Application Endpoints                  ###############
+###############################################################################
 
 @app.get("/api/health")
 async def health_check():
@@ -299,7 +306,7 @@ async def search_string(request: Request):
 
 
 @app.get("/api/suggest", response_model=List[str])
-def suggest_names(request: Request, q: str = Query(..., min_length=2)):
+def suggest_names(request: Request, q: str = Query(..., min_length=3)):
     """
     Searches the server-side memory array. 
     Only returns a maximum of 8 matches, keeping the master list hidden.
@@ -320,6 +327,7 @@ def suggest_names(request: Request, q: str = Query(..., min_length=2)):
             "Cache-Control": "private, max-age=3600, must-revalidate",
         },
     )
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

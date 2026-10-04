@@ -6,7 +6,7 @@ export function NameGuessInput({ value, onChange }) {
 
   useEffect(() => {
     const query = value.trim();
-    if (query.length < 2) {
+    if (query.length < 3) {
       setSuggestions([]);
       return;
     }
