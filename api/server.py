@@ -1,5 +1,4 @@
 import csv
-import hashlib
 import json
 import os
 import re
@@ -9,7 +8,7 @@ from contextlib import asynccontextmanager, closing
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
-from typing import AsyncGenerator, Dict, List, Any
+from typing import Dict, List, Any
 from urllib.parse import parse_qs
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -315,23 +314,10 @@ def suggest_names(request: Request, q: str = Query(..., min_length=2)):
         if len(matches) >= 8:  # Hard limit on returned elements protects your list
             break
 
-    # Generate ETag
-    etag = hashlib.sha256(json.dumps(matches).encode("utf-8")).hexdigest()
-
-    # Check if we have sent this before
-    client_etag = request.headers.get("if-none-match")
-    if client_etag == etag:
-        # Data hasn't changed, return 304
-        return PlainTextResponse(
-            status_code=304,
-            headers={"ETag": etag}
-        )
-
     return JSONResponse(
         content=matches,
         headers={
-            "Cache-Control": "private, max-age=3600",
-            "ETag": f'"{etag}"',
+            "Cache-Control": "private, max-age=3600, must-revalidate",
         },
     )
 
