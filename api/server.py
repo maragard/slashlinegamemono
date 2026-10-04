@@ -300,7 +300,7 @@ async def search_string(request: Request):
 
 
 @app.get("/api/suggest", response_model=List[str])
-def suggest_names(q: str = Query(..., min_length=2)):
+def suggest_names(request: Request, q: str = Query(..., min_length=2)):
     """
     Searches the server-side memory array. 
     Only returns a maximum of 8 matches, keeping the master list hidden.
@@ -315,7 +315,18 @@ def suggest_names(q: str = Query(..., min_length=2)):
         if len(matches) >= 8:  # Hard limit on returned elements protects your list
             break
 
+    # Generate ETag
     etag = hashlib.sha256(json.dumps(matches).encode("utf-8")).hexdigest()
+
+    # Check if we have sent this before
+    client_etag = request.headers.get("if-none-match")
+    if client_etag == etag:
+        # Data hasn't changed, return 304
+        return PlainTextResponse(
+            status_code=304,
+            headers={"ETag": etag}
+        )
+
     return JSONResponse(
         content=matches,
         headers={
