@@ -37,7 +37,6 @@ def init_db(csv_path=CSV_PATH):
     Returns None
     """
     with closing(_connect_db()) as conn:
-        conn.text_factory = lambda data: data.decode('latin-1', errors='replace')
         curr = conn.cursor()
 
         curr.execute(
@@ -76,7 +75,7 @@ def init_db(csv_path=CSV_PATH):
         count = curr.fetchone()[0]
 
         if count == 0 and os.path.exists(csv_path):
-            with open(csv_path, newline="", encoding="latin-1") as file:
+            with open(csv_path, newline="", encoding="utf-8") as file:
                 for row in csv.DictReader(file):
                     player_id = int(row["id"]) if row.get("id") else None
                     values = (
@@ -118,7 +117,6 @@ def init_db(csv_path=CSV_PATH):
 
 def select_new_player():
     with closing(_connect_db()) as conn:
-        conn.text_factory = lambda data: data.decode('latin-1', errors='replace')
         curr = conn.cursor()
 
         # Find new player
@@ -157,7 +155,6 @@ def load_current_player():
     global chosen, statline
 
     with closing(_connect_db()) as conn:
-        conn.text_factory = lambda data: data.decode('latin-1', errors='replace')
         curr = conn.cursor()
 
         target = curr.execute (
@@ -182,7 +179,6 @@ def get_eligible_names():
     """
     global GLOBAL_NAMES_CACHE
     with closing(_connect_db()) as conn:
-        conn.text_factory = lambda data: data.decode('latin-1', errors='replace')
         curr = conn.cursor()
         # Fetch all names at once
         curr.execute ("SELECT name FROM players ORDER BY name ASC")
