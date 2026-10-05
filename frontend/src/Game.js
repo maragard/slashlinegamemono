@@ -93,19 +93,6 @@ export default function Game() {
       <h2 style={{ marginBottom: '20px' }}>Who's That Player?</h2>
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-        {/* <input
-          type="text"
-          value={playerName}
-          onChange={(event) => setPlayerName(event.target.value)}
-          placeholder="Enter a player name"
-          style={{
-            flex: 1,
-            padding: '12px 14px',
-            fontSize: '16px',
-            borderRadius: '8px',
-            border: '1px solid #ccc',
-          }}
-        /> */}
         <NameGuessInput 
           value={playerName}
           onChange={setPlayerName}
