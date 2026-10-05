@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { NameGuessInput } from './NameGuessInput';
 
 const API_BASE_URL = "/api";
 const API_URL = `${API_BASE_URL}/guess-player`;
@@ -92,18 +93,9 @@ export default function Game() {
       <h2 style={{ marginBottom: '20px' }}>Who's That Player?</h2>
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-        <input
-          type="text"
+        <NameGuessInput 
           value={playerName}
-          onChange={(event) => setPlayerName(event.target.value)}
-          placeholder="Enter a player name"
-          style={{
-            flex: 1,
-            padding: '12px 14px',
-            fontSize: '16px',
-            borderRadius: '8px',
-            border: '1px solid #ccc',
-          }}
+          onChange={setPlayerName}
         />
         <button
           type="submit"
