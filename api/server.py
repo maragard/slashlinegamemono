@@ -31,8 +31,13 @@ def _connect_db():
 
 
 def init_db(csv_path=CSV_PATH):
+    """
+    Setup database with data from players.csv
+
+    Returns None
+    """
     with closing(_connect_db()) as conn:
-        conn.text_factory = lambda data: str(data, encoding="latin1", errors="surrogateescape")
+        conn.text_factory = lambda data: data.decode('latin-1', errors='replace')
         curr = conn.cursor()
 
         curr.execute(
@@ -113,7 +118,7 @@ def init_db(csv_path=CSV_PATH):
 
 def select_new_player():
     with closing(_connect_db()) as conn:
-        conn.text_factory = lambda data: str(data, encoding="latin1", errors="surrogateescape")
+        conn.text_factory = lambda data: data.decode('latin-1', errors='replace')
         curr = conn.cursor()
 
         # Find new player
@@ -144,10 +149,15 @@ def select_new_player():
 
 
 def load_current_player():
+    """
+
+
+    Returns None
+    """
     global chosen, statline
 
     with closing(_connect_db()) as conn:
-        conn.text_factory = lambda data: str(data, encoding="latin1", errors="surrogateescape")
+        conn.text_factory = lambda data: data.decode('latin-1', errors='replace')
         curr = conn.cursor()
 
         target = curr.execute (
@@ -167,10 +177,12 @@ def get_eligible_names():
     """
     Returns a flat array of all valid guessing names.
     Cached on the client to power instant autocomplete.
+
+    Returns None
     """
     global GLOBAL_NAMES_CACHE
     with closing(_connect_db()) as conn:
-        conn.text_factory = lambda data: str(data, encoding="latin1", errors="surrogateescape")
+        conn.text_factory = lambda data: data.decode('latin-1', errors='replace')
         curr = conn.cursor()
         # Fetch all names at once
         curr.execute ("SELECT name FROM players ORDER BY name ASC")
@@ -186,7 +198,8 @@ def get_eligible_names():
 @asynccontextmanager
 async def lifecycle(app: FastAPI):
     """
-    Lifecycle function for backend.
+    Lifecycle function for backend. Any startup/shutdown events should be run
+    in here, either before or after the keyword 'yield'.
     """
     # on_event("startup"): setup backend
     database = _connect_db()
@@ -221,7 +234,7 @@ app.add_middleware(
 
 
 ###############################################################################
-##############           Application Endpoints                  ###############
+##############                Application Endpoints             ###############
 ###############################################################################
 
 @app.get("/api/health")
@@ -231,20 +244,32 @@ async def health_check():
 
 @app.get("/api/reset")
 def reset_game():
+    """
+    Choose a new player from the db, and set up the global vars
+    
+    Returns None
+    """
     try:
         select_new_player()
+        load_current_player()
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unknown error: {str(e)}")
     else:   
-        load_current_player()
         return JSONResponse(content={"msg": "Game reset successfully"})
 
 
-@app.get("/api/start")
+@app.get("/api/start", response_model=Dict[str, str])
 async def starting_info():
-    return {"hint": statline}
+    """
+    Send the starting guess for the game
+
+    Return JSON
+    """
+    return JSONResponse(content={"hint": statline})
 
 
 @app.post("/api/guess-player")
@@ -278,31 +303,6 @@ async def guess_player(request: Request):
         })
 
     return {"success": False, "msg": "Try again"}
-
-
-@app.post("/api/get-players")
-async def search_string(request: Request):
-    body = await request.body()
-    content_type = request.headers.get("content-type", "")
-
-    value = None
-
-    if "application/json" in content_type:
-        try:
-            value = json.loads(body.decode("utf-8")).get("value")
-        except (json.JSONDecodeError, ValueError):
-            return PlainTextResponse("Invalid JSON", status_code=400)
-    else:
-        values = parse_qs(body.decode("utf-8"))
-        value = values.get("value", [None])[0]
-
-    if value is None:
-        return PlainTextResponse(
-            "Missing 'value' query parameter",
-            status_code=400,
-        )
-
-    return {"received_string": value}
 
 
 @app.get("/api/suggest", response_model=List[str])
