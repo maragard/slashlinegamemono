@@ -8,7 +8,8 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
-        <img src={image} className="App-logo" alt="logo" />
+        <img src={image} className="App-logo" alt="logo" style={{ width: '10%', height: '10%' }} />
+        <br />
         <Game />
       </header>
     </div>
