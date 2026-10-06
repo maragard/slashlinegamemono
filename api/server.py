@@ -116,6 +116,12 @@ def init_db(csv_path=CSV_PATH):
 
 
 def select_new_player():
+    """
+    Chooses a player at random from the full list
+    and stores them in todays_player. 
+
+    Returns None
+    """
     with closing(_connect_db()) as conn:
         curr = conn.cursor()
 
@@ -148,7 +154,7 @@ def select_new_player():
 
 def load_current_player():
     """
-
+    Initialize global variables by fetching todays_players
 
     Returns None
     """
@@ -172,7 +178,7 @@ def load_current_player():
 
 def get_eligible_names():
     """
-    Returns a flat array of all valid guessing names.
+    Generates a flat array of all valid guessing names.
     Cached on the client to power instant autocomplete.
 
     Returns None
@@ -286,7 +292,6 @@ async def guess_player(request: Request):
 
     if unique_id is not None:
         with closing(_connect_db()) as conn:
-            conn.text_factory = lambda data: str(data, encoding="latin1", errors="surrogateescape")
             player = conn.execute(
                 "SELECT name FROM players WHERE id = ?",
                 (unique_id,),
