@@ -37,7 +37,6 @@ def init_db(csv_path=CSV_PATH):
     Returns None
     """
     with closing(_connect_db()) as conn:
-        conn.text_factory = lambda data: data.decode('latin-1', errors='replace')
         curr = conn.cursor()
 
         curr.execute(
@@ -76,7 +75,7 @@ def init_db(csv_path=CSV_PATH):
         count = curr.fetchone()[0]
 
         if count == 0 and os.path.exists(csv_path):
-            with open(csv_path, newline="", encoding="latin-1") as file:
+            with open(csv_path, newline="", encoding="utf-8") as file:
                 for row in csv.DictReader(file):
                     player_id = int(row["id"]) if row.get("id") else None
                     values = (
@@ -117,8 +116,13 @@ def init_db(csv_path=CSV_PATH):
 
 
 def select_new_player():
+    """
+    Chooses a player at random from the full list
+    and stores them in todays_player. 
+
+    Returns None
+    """
     with closing(_connect_db()) as conn:
-        conn.text_factory = lambda data: data.decode('latin-1', errors='replace')
         curr = conn.cursor()
 
         # Find new player
@@ -150,14 +154,13 @@ def select_new_player():
 
 def load_current_player():
     """
-
+    Initialize global variables by fetching todays_players
 
     Returns None
     """
     global chosen, statline
 
     with closing(_connect_db()) as conn:
-        conn.text_factory = lambda data: data.decode('latin-1', errors='replace')
         curr = conn.cursor()
 
         target = curr.execute (
@@ -175,14 +178,13 @@ def load_current_player():
 
 def get_eligible_names():
     """
-    Returns a flat array of all valid guessing names.
+    Generates a flat array of all valid guessing names.
     Cached on the client to power instant autocomplete.
 
     Returns None
     """
     global GLOBAL_NAMES_CACHE
     with closing(_connect_db()) as conn:
-        conn.text_factory = lambda data: data.decode('latin-1', errors='replace')
         curr = conn.cursor()
         # Fetch all names at once
         curr.execute ("SELECT name FROM players ORDER BY name ASC")
@@ -290,7 +292,6 @@ async def guess_player(request: Request):
 
     if unique_id is not None:
         with closing(_connect_db()) as conn:
-            conn.text_factory = lambda data: str(data, encoding="latin1", errors="surrogateescape")
             player = conn.execute(
                 "SELECT name FROM players WHERE id = ?",
                 (unique_id,),
