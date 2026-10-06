@@ -5,7 +5,7 @@ import re
 import sqlite3
 import uvicorn
 from contextlib import asynccontextmanager, closing
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, List, Any
@@ -19,6 +19,11 @@ NAME_DETECTOR = re.compile(r"\w+(\s){1}\w+")
 
 chosen = ""
 statline = ""
+GLOBAL_NAMES_CACHE: List[str] = []
+
+###############################################################################
+##############             Helper functions                     ###############
+###############################################################################
 
 
 def _connect_db():
@@ -26,118 +31,133 @@ def _connect_db():
 
 
 def init_db(csv_path=CSV_PATH):
-    conn = _connect_db()
-    curr = conn.cursor()
+    """
+    Setup database with data from players.csv
 
-    curr.execute(
-        """
-        CREATE TABLE IF NOT EXISTS players (
-            id INTEGER PRIMARY KEY,
-            name TEXT,
-            team TEXT,
-            position TEXT,
-            debut_year TEXT,
-            retirement_year TEXT,
-            plate_apps TEXT,
-            avg TEXT,
-            obp TEXT,
-            slg TEXT
+    Returns None
+    """
+    with closing(_connect_db()) as conn:
+        curr = conn.cursor()
+
+        curr.execute(
+            """
+            CREATE TABLE IF NOT EXISTS players (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                team TEXT,
+                position TEXT,
+                debut_year TEXT,
+                retirement_year TEXT,
+                plate_apps TEXT,
+                avg TEXT,
+                obp TEXT,
+                slg TEXT
+            )
+            """
         )
-        """
-    )
 
-    curr.execute(
-        """
-        CREATE TABLE IF NOT EXISTS todays_player (
-            name TEXT PRIMARY KEY,
-            team TEXT,
-            position TEXT,
-            debut_year TEXT,
-            retirement_year TEXT,
-            avg TEXT,
-            obp TEXT,
-            slg TEXT
+        curr.execute(
+            """
+            CREATE TABLE IF NOT EXISTS todays_player (
+                name TEXT PRIMARY KEY,
+                team TEXT,
+                position TEXT,
+                debut_year TEXT,
+                retirement_year TEXT,
+                avg TEXT,
+                obp TEXT,
+                slg TEXT
+            )
+            """
         )
-        """
-    )
 
-    curr.execute("SELECT COUNT(1) FROM players")
-    count = curr.fetchone()[0]
+        curr.execute("SELECT COUNT(1) FROM players")
+        count = curr.fetchone()[0]
 
-    if count == 0 and os.path.exists(csv_path):
-        with open(csv_path, newline="", encoding="latin-1") as file:
-            for row in csv.DictReader(file):
-                player_id = int(row["id"]) if row.get("id") else None
-                values = (
-                    row.get("Player Name"),
-                    row.get("Team(s)"),
-                    row.get("Position(s)"),
-                    row.get("Debut Year"),
-                    row.get("Retirement Year"),
-                    row.get("PA"),
-                    row.get("AVG"),
-                    row.get("OBP"),
-                    row.get("SLG"),
-                )
-
-                if player_id is None:
-                    curr.execute(
-                        """
-                        INSERT INTO players
-                        (name, team, position, debut_year, retirement_year,
-                         plate_apps, avg, obp, slg)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        values,
-                    )
-                else:
-                    curr.execute(
-                        """
-                        INSERT OR REPLACE INTO players
-                        (id, name, team, position, debut_year, retirement_year,
-                         plate_apps, avg, obp, slg)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (player_id, *values),
+        if count == 0 and os.path.exists(csv_path):
+            with open(csv_path, newline="", encoding="utf-8") as file:
+                for row in csv.DictReader(file):
+                    player_id = int(row["id"]) if row.get("id") else None
+                    values = (
+                        row.get("Player Name"),
+                        row.get("Team(s)"),
+                        row.get("Position(s)"),
+                        row.get("Debut Year"),
+                        row.get("Retirement Year"),
+                        row.get("PA"),
+                        row.get("AVG"),
+                        row.get("OBP"),
+                        row.get("SLG"),
                     )
 
-        conn.commit()
+                    if player_id is None:
+                        curr.execute(
+                            """
+                            INSERT INTO players
+                            (name, team, position, debut_year, retirement_year,
+                            plate_apps, avg, obp, slg)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            values,
+                        )
+                    else:
+                        curr.execute(
+                            """
+                            INSERT OR REPLACE INTO players
+                            (id, name, team, position, debut_year, retirement_year,
+                            plate_apps, avg, obp, slg)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (player_id, *values),
+                        )
 
-    conn.close()
+            conn.commit()
+    return
 
 
 def select_new_player():
-    conn = _connect_db()
-    curr = conn.cursor()
+    """
+    Chooses a player at random from the full list
+    and stores them in todays_player. 
 
-    # Find new player
-    player = curr.execute (
-        """
-        SELECT id, name, team, position, debut_year, retirement_year, avg, obp, slg
-        FROM players
-        ORDER BY RANDOM()
-        LIMIT 1
-        """
-    ).fetchone()
+    Returns None
+    """
+    with closing(_connect_db()) as conn:
+        curr = conn.cursor()
 
-    # Reset todays_player
-    curr.execute ("DELETE FROM todays_player")
-    # Set new value for todays_player
-    print(player)
-    curr.execute (
+        # Find new player
+        player = curr.execute (
             """
-            INSERT INTO todays_player
-            (name, team, position, debut_year, retirement_year, avg, obp, slg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            player[1:],
-        )
+            SELECT id, name, team, position, debut_year, retirement_year, avg, obp, slg
+            FROM players
+            ORDER BY RANDOM()
+            LIMIT 1
+            """
+        ).fetchone()
 
-    conn.commit()
-    conn.close()
+        # Reset todays_player
+        curr.execute ("DELETE FROM todays_player")
+        # Set new value for todays_player
+        print(player)
+        curr.execute (
+                """
+                INSERT INTO todays_player
+                (name, team, position, debut_year, retirement_year, avg, obp, slg)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                player[1:],
+            )
+
+        conn.commit()
     return
 
+
 def load_current_player():
+    """
+    Initialize global variables by fetching todays_players
+
+    Returns None
+    """
     global chosen, statline
 
     with closing(_connect_db()) as conn:
@@ -156,21 +176,50 @@ def load_current_player():
     return
 
 
+def get_eligible_names():
+    """
+    Generates a flat array of all valid guessing names.
+    Cached on the client to power instant autocomplete.
+
+    Returns None
+    """
+    global GLOBAL_NAMES_CACHE
+    with closing(_connect_db()) as conn:
+        curr = conn.cursor()
+        # Fetch all names at once
+        curr.execute ("SELECT name FROM players ORDER BY name ASC")
+        
+        # Flatten and save into memory
+        GLOBAL_NAMES_CACHE = [row[0] for row in curr.fetchall()]
+        print(f"Loaded {len(GLOBAL_NAMES_CACHE)} names safely into backend memory.")
+
+###############################################################################
+##############               Application Setup                  ###############
+###############################################################################
+
 @asynccontextmanager
 async def lifecycle(app: FastAPI):
-    # BEFORE yield: setup backend
+    """
+    Lifecycle function for backend. Any startup/shutdown events should be run
+    in here, either before or after the keyword 'yield'.
+    """
+    # on_event("startup"): setup backend
     database = _connect_db()
-    try:
-        init_db()
-        select_new_player()
-        load_current_player()
-        yield
-    finally:
-        database.close()
+    init_db()
+    select_new_player()
+    load_current_player()
+    get_eligible_names()
+
+    yield
+
+    # on_event("shutdown"): clean up memory
+    database.close()
+
 
 app = FastAPI(
     lifespan=lifecycle
 )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -186,6 +235,10 @@ app.add_middleware(
 )
 
 
+###############################################################################
+##############                Application Endpoints             ###############
+###############################################################################
+
 @app.get("/api/health")
 async def health_check():
     return JSONResponse(content={"status": "ok"})
@@ -193,20 +246,32 @@ async def health_check():
 
 @app.get("/api/reset")
 def reset_game():
+    """
+    Choose a new player from the db, and set up the global vars
+    
+    Returns None
+    """
     try:
         select_new_player()
+        load_current_player()
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unknown error: {str(e)}")
     else:   
-        load_current_player()
         return JSONResponse(content={"msg": "Game reset successfully"})
 
 
-@app.get("/api/start")
+@app.get("/api/start", response_model=Dict[str, str])
 async def starting_info():
-    return {"hint": statline}
+    """
+    Send the starting guess for the game
+
+    Return JSON
+    """
+    return JSONResponse(content={"hint": statline})
 
 
 @app.post("/api/guess-player")
@@ -241,45 +306,28 @@ async def guess_player(request: Request):
     return {"success": False, "msg": "Try again"}
 
 
-@app.post("/api/get-players")
-async def search_string(request: Request):
-    body = await request.body()
-    content_type = request.headers.get("content-type", "")
-
-    value = None
-
-    if "application/json" in content_type:
-        try:
-            value = json.loads(body.decode("utf-8")).get("value")
-        except (json.JSONDecodeError, ValueError):
-            return PlainTextResponse("Invalid JSON", status_code=400)
-    else:
-        values = parse_qs(body.decode("utf-8"))
-        value = values.get("value", [None])[0]
-
-    if value is None:
-        return PlainTextResponse(
-            "Missing 'value' query parameter",
-            status_code=400,
-        )
-
-    return {"received_string": value}
-
-@app.get("/api/eligible-names")
-def get_eligible_names():
+@app.get("/api/suggest", response_model=List[str])
+def suggest_names(request: Request, q: str = Query(..., min_length=3)):
     """
-    Returns a flat array of all valid guessing names.
-    Cached on the client to power instant autocomplete.
+    Searches the server-side memory array. 
+    Only returns a maximum of 8 matches, keeping the master list hidden.
     """
-    with closing(_connect_db()) as conn:
-        curr = conn.cursor()
-        # Select only the column you need to keep payload tiny
-        curr.execute ("SELECT name FROM players ORDER BY name_string ASC")
-        
-        # Flatten tuple results: [("Alice",), ("Bob",)] -> ["Alice", "Bob"]
-        names = [row[0] for row in curr.fetchall()]
-        
-    return JSONResponse(content={'names': names})
+    query = q.strip().lower()
+    matches = []
+    
+    # Filter through RAM list
+    for name in GLOBAL_NAMES_CACHE:
+        if query in name.lower():
+            matches.append(name)
+        if len(matches) >= 8:  # Hard limit on returned elements protects your list
+            break
+
+    return JSONResponse(
+        content=matches,
+        headers={
+            "Cache-Control": "private, max-age=3600, must-revalidate",
+        },
+    )
 
 
 if __name__ == "__main__":
