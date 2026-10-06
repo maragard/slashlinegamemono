@@ -323,9 +323,10 @@ def suggest_names(request: Request, q: str = Query(..., min_length=3)):
     for name in GLOBAL_NAMES_CACHE:
         if query in name.lower():
             matches.append(name)
-        if len(matches) >= 8:  # Hard limit on returned elements protects your list
+        if len(matches) >= 15:  # Hard limit on returned elements protects your list
             break
 
+    print(matches)
     return JSONResponse(
         content=matches,
         headers={
