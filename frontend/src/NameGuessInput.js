@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react';
 
-export function NameGuessInput({ value, onChange }) {
+export function NameGuessInput({ value, onChange, incorrectGuesses }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const incorrectGuessNames = new Set(
+    incorrectGuesses.map((guess) => guess.trim().toLowerCase())
+  );
+  const filteredSuggestions = suggestions
+    .filter((name) => !incorrectGuessNames.has(name.trim().toLowerCase()))
+    .slice(0, 8);
 
   useEffect(() => {
     const query = value.trim();
@@ -33,7 +39,7 @@ export function NameGuessInput({ value, onChange }) {
           setShowSuggestions(true);
         }}
         onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-        placeholder="Type a name guess..."
+        placeholder="Guess a player..."
         style={{
           flex: 1,
           padding: '12px 14px',
@@ -43,9 +49,9 @@ export function NameGuessInput({ value, onChange }) {
         }}
       />
 
-      {showSuggestions && suggestions.length > 0 && (
+      {showSuggestions && filteredSuggestions.length > 0 && (
         <ul style={{ position: 'absolute', background: 'white', border: '1px solid #ccc', width: '100%', zIndex: 10 }}>
-          {suggestions.map((name) => (
+          {filteredSuggestions.map((name) => (
             <ul 
               key={name}
               onMouseDown={() => {
