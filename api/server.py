@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 import os
 import re
@@ -314,7 +315,7 @@ async def guess_player(request: Request):
 def suggest_names(request: Request, q: str = Query(..., min_length=3)):
     """
     Searches the server-side memory array. 
-    Only returns a maximum of 8 matches, keeping the master list hidden.
+    Only returns a set number of matches, keeping the master list hidden.
     """
     query = q.strip().lower()
     matches = []
@@ -323,14 +324,34 @@ def suggest_names(request: Request, q: str = Query(..., min_length=3)):
     for name in GLOBAL_NAMES_CACHE:
         if query in name.lower():
             matches.append(name)
-        if len(matches) >= 15:  # Hard limit on returned elements protects your list
+        # Hard limit on returned elements protects your list
+        if len(matches) >= 15:  
             break
+
+    # 1. Serialize the content to a stable JSON string to generate a hash
+    # sort_keys=True ensures the string layout is identical every time
+    content_bytes = json.dumps(matches, sort_keys=True).encode("utf-8")
+    
+    # 2. Generate the ETag (wrapped in quotes per the HTTP spec)
+    etag_value = f'"{hashlib.md5(content_bytes).hexdigest()}"'
+    
+    # 3. Check if the client already has this version
+    client_etag = request.headers.get("If-None-Match")
+    if client_etag == etag_value:
+        # Client has the fresh copy; return 304 with NO body and headers
+        return PlainTextResponse(
+            status_code=304,
+            headers={
+                "Cache-Control": "private, max-age=60, must-revalidate",
+                "ETag": etag_value,
+            }
+        )
 
     print(matches)
     return JSONResponse(
         content=matches,
         headers={
-            "Cache-Control": "private, max-age=3600, must-revalidate",
+            "Cache-Control": "private, max-age=60, must-revalidate",
         },
     )
 
