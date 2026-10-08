@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NameGuessInput } from './NameGuessInput';
 import { PopupFrame } from './PopupFrame.js';
+import { IncorrectGuesses } from './IncorrectGuesses';
 
 const API_BASE_URL = "/api";
 const API_URL = `${API_BASE_URL}/guess-player`;
@@ -13,6 +14,7 @@ export default function Game() {
   const [loading, setLoading] = useState(false);
   const [startHint, setStartHint] = useState('Loading hint...');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [incorrectGuesses, setIncorrectGuesses] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -72,6 +74,9 @@ export default function Game() {
       }
 
       setResult(data);
+      if (!data.success) {
+        setIncorrectGuesses((guesses) => [...guesses, trimmedName]);
+      }
     } catch (err) {
       setError(err.message || 'Failed to fetch player information.');
     } finally {
@@ -111,6 +116,7 @@ export default function Game() {
           <NameGuessInput 
             value={playerName}
             onChange={setPlayerName}
+            incorrectGuesses={incorrectGuesses}
           />
           <button
             type="submit"
@@ -158,6 +164,8 @@ export default function Game() {
             </div>
           </section>
         )}
+
+        <IncorrectGuesses guesses={incorrectGuesses} />
       </div>
       <button onClick={() => setIsPopupOpen(true)}>
         Rules
