@@ -352,6 +352,7 @@ def suggest_names(request: Request, q: str = Query(..., min_length=3)):
         content=matches,
         headers={
             "Cache-Control": "private, max-age=60, must-revalidate",
+            "ETag": etag_value,
         },
     )
 
