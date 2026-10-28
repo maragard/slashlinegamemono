@@ -1,14 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-export function NameGuessInput({ value, onChange, incorrectGuesses }) {
+export function NameGuessInput({
+  value,
+  onChange,
+  onPlayerSelect = () => {},
+  incorrectGuesses,
+}) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionCache = useRef(new Map());
+  const incorrectGuessIds = new Set(
+    incorrectGuesses
+      .filter((guess) => typeof guess === 'object' && guess.id != null)
+      .map((guess) => guess.id)
+  );
   const incorrectGuessNames = new Set(
-    incorrectGuesses.map((guess) => guess.trim().toLowerCase())
+    incorrectGuesses
+      .filter((guess) => typeof guess === 'string' || guess.id == null)
+      .map((guess) => (typeof guess === 'string' ? guess : guess.name).trim().toLowerCase())
   );
   const filteredSuggestions = suggestions
-    .filter((name) => !incorrectGuessNames.has(name.trim().toLowerCase()))
+    .filter((player) => (
+      !incorrectGuessIds.has(player.id) &&
+      !incorrectGuessNames.has(player.name.trim().toLowerCase())
+    ))
     .slice(0, 8);
 
   useEffect(() => {
@@ -70,6 +85,7 @@ export function NameGuessInput({ value, onChange, incorrectGuesses }) {
         value={value}
         onChange={(e) => {
           onChange(e.target.value);
+          onPlayerSelect(null);
           setShowSuggestions(true);
         }}
         onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
@@ -85,17 +101,21 @@ export function NameGuessInput({ value, onChange, incorrectGuesses }) {
 
       {showSuggestions && filteredSuggestions.length > 0 && (
         <ul style={{ position: 'absolute', background: 'white', border: '1px solid #ccc', width: '100%', zIndex: 10 }}>
-          {filteredSuggestions.map((name) => (
-            <ul 
-              key={name}
+          {filteredSuggestions.map((player) => (
+            <li
+              key={player.id}
               onMouseDown={() => {
-                onChange(name);
+                onChange(player.name);
+                onPlayerSelect(player.id);
                 setShowSuggestions(false);
               }}
-              style={{ padding: '8px', cursor: 'pointer', color: 'black' }}
+              style={{ padding: '8px', cursor: 'pointer', color: 'black', listStyle: 'none' }}
             >
-              {name}
-            </ul>
+              <span>{player.name}</span>
+              <small style={{ display: 'block', color: '#555' }}>
+                {player.team || 'Team not listed'} · {player.debut_year || 'unknown'} · {player.retirement_year === 'Not Found' ? 'Active' : player.retirement_year || 'unknown'}
+              </small>
+            </li>
           ))}
         </ul>
       )}

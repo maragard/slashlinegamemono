@@ -10,7 +10,9 @@ export function IncorrectGuesses({ guesses }) {
       <h3 id="incorrect-guesses-heading">Incorrect guesses</h3>
       <ul style={{ listStyleType: 'none', paddingLeft: 0 }}>
         {guesses.map((guess, index) => (
-          <li key={`${guess}-${index}`}>{guess}</li>
+          <li key={`${typeof guess === 'string' ? guess : guess.name}-${index}`}>
+            {typeof guess === 'string' ? guess : guess.name}
+          </li>
         ))}
       </ul>
     </section>

@@ -20,7 +20,7 @@ NAME_DETECTOR = re.compile(r"\w+(\s){1}\w+")
 
 chosen = ""
 statline = ""
-GLOBAL_NAMES_CACHE: List[str] = []
+GLOBAL_PLAYER_CACHE: List[Dict[str, Any]] = []
 
 ###############################################################################
 ##############                 Helper functions                 ###############
@@ -65,6 +65,7 @@ def init_db(csv_path=CSV_PATH):
             """
             CREATE TABLE IF NOT EXISTS todays_player (
                 name TEXT PRIMARY KEY,
+                player_id INTEGER,
                 team TEXT,
                 position TEXT,
                 debut_year TEXT,
@@ -75,6 +76,11 @@ def init_db(csv_path=CSV_PATH):
             )
             """
         )
+
+        curr.execute("PRAGMA table_info(todays_player)")
+        todays_player_columns = {row[1] for row in curr.fetchall()}
+        if "player_id" not in todays_player_columns:
+            curr.execute("ALTER TABLE todays_player ADD COLUMN player_id INTEGER")
 
         curr.execute("SELECT COUNT(1) FROM players")
         count = curr.fetchone()[0]
@@ -147,10 +153,10 @@ def select_new_player():
         curr.execute (
                 """
                 INSERT INTO todays_player
-                (name, team, position, debut_year, retirement_year, avg, obp, slg)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (name, player_id, team, position, debut_year, retirement_year, avg, obp, slg)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                player[1:],
+                (player[1], player[0], *player[2:]),
             )
 
         conn.commit()
@@ -170,7 +176,7 @@ def load_current_player():
 
         target = curr.execute (
             """
-            SELECT name, team, position, debut_year, retirement_year, avg, obp, slg
+            SELECT player_id, name, team, position, debut_year, retirement_year, avg, obp, slg
             FROM todays_player
             """
         ).fetchone()
@@ -181,22 +187,34 @@ def load_current_player():
     return
 
 
-def get_eligible_names():
+def get_eligible_players():
     """
-    Generates a flat array of all valid guessing names.
-    Cached on the client to power instant autocomplete.
+    Caches player records to power autocomplete suggestions.
 
     Returns None
     """
-    global GLOBAL_NAMES_CACHE
+    global GLOBAL_PLAYER_CACHE
     with closing(_connect_db()) as conn:
         curr = conn.cursor()
-        # Fetch all names at once
-        curr.execute ("SELECT name FROM players ORDER BY name ASC")
+        curr.execute(
+            """
+            SELECT id, name, team, debut_year, retirement_year
+            FROM players
+            ORDER BY name ASC, id ASC
+            """
+        )
         
-        # Flatten and save into memory
-        GLOBAL_NAMES_CACHE = [row[0] for row in curr.fetchall()]
-        print(f"Loaded {len(GLOBAL_NAMES_CACHE)} names safely into backend memory.")
+        GLOBAL_PLAYER_CACHE = [
+            {
+                "id": row[0],
+                "name": row[1],
+                "team": row[2],
+                "debut_year": row[3],
+                "retirement_year": row[4],
+            }
+            for row in curr.fetchall()
+        ]
+        print(f"Loaded {len(GLOBAL_PLAYER_CACHE)} players safely into backend memory.")
 
 ###############################################################################
 ##############               Application Setup                  ###############
@@ -213,7 +231,7 @@ async def lifecycle(app: FastAPI):
     init_db()
     select_new_player()
     load_current_player()
-    get_eligible_names()
+    get_eligible_players()
 
     yield
 
@@ -292,40 +310,38 @@ async def guess_player(request: Request):
     if unique_id is None and not guess_name:
         return PlainTextResponse("Missing necessary fields", status_code=400)
 
-    if guess_name and guess_name == chosen[0].strip("'"):
-        return JSONResponse(content={"success": True, "msg": "You did it!"})
-
     if unique_id is not None:
         with closing(_connect_db()) as conn:
             player = conn.execute(
-                "SELECT name FROM players WHERE id = ?",
+                "SELECT id FROM players WHERE id = ?",
                 (unique_id,),
             ).fetchone()
 
-        success = bool(player and player[0] == chosen[0].strip("'"))
+        success = bool(player and player[0] == chosen[0])
         return JSONResponse({
             "success": success,
             "msg": "You did it!" if success else "Try again",
         })
 
+    # If id is sent, this code is unreachable
+    if guess_name and guess_name == chosen[1].strip("'"):
+        return JSONResponse(content={"success": True, "msg": "You did it!"})
+
     return {"success": False, "msg": "Try again"}
 
 
-@app.get("/api/suggest", response_model=List[str])
+@app.get("/api/suggest", response_model=List[Dict[str, Any]])
 def suggest_names(request: Request, q: str = Query(..., min_length=3)):
     """
-    Searches the server-side memory array. 
-    Only returns a set number of matches, keeping the master list hidden.
+    Searches cached player records and returns a limited set of matches.
     """
     query = q.strip().lower()
     matches = []
     
-    # Filter through RAM list
-    for name in GLOBAL_NAMES_CACHE:
-        if query in name.lower():
-            matches.append(name)
-        # Hard limit on returned elements protects your list
-        if len(matches) >= 15:  
+    for player in GLOBAL_PLAYER_CACHE:
+        if query in (player["name"] or "").lower():
+            matches.append(player)
+        if len(matches) >= 15:
             break
 
     # 1. Serialize the content to a stable JSON string to generate a hash

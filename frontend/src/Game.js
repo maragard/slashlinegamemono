@@ -15,6 +15,7 @@ export default function Game() {
   const [startHint, setStartHint] = useState('Loading hint...');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [incorrectGuesses, setIncorrectGuesses] = useState([]);
+  const [selectedPlayerId, setSelectedPlayerId] = useState(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -64,7 +65,11 @@ export default function Game() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: trimmedName }),
+        body: JSON.stringify(
+          selectedPlayerId === null
+            ? { name: trimmedName }
+            : { id: selectedPlayerId }
+        ),
       });
 
       const data = await response.json();
@@ -75,7 +80,10 @@ export default function Game() {
 
       setResult(data);
       if (!data.success) {
-        setIncorrectGuesses((guesses) => [...guesses, trimmedName]);
+        setIncorrectGuesses((guesses) => [
+          ...guesses,
+          { id: selectedPlayerId, name: trimmedName },
+        ]);
       }
     } catch (err) {
       setError(err.message || 'Failed to fetch player information.');
@@ -95,6 +103,7 @@ export default function Game() {
         <ol>
           <li>Guess a player based on the given slashline.</li>
           <li>Only players who have more than 1000 plate appearances are eligible.</li>
+          <li>Type at least 3 characters to get suggestions</li>
           <li>More rules to follow</li>
         </ol>
       </PopupFrame>
@@ -115,7 +124,11 @@ export default function Game() {
         <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
           <NameGuessInput 
             value={playerName}
-            onChange={setPlayerName}
+            onChange={(name) => {
+              setPlayerName(name);
+              setSelectedPlayerId(null);
+            }}
+            onPlayerSelect={setSelectedPlayerId}
             incorrectGuesses={incorrectGuesses}
           />
           <button
