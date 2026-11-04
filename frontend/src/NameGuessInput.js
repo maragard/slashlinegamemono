@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-export function NameGuessInput({ value, onChange, incorrectGuesses }) {
+export function NameGuessInput({ value, onChange, pastGuesses }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionCache = useRef(new Map());
-  const incorrectGuessNames = new Set(
-    incorrectGuesses.map((guess) => guess.trim().toLowerCase())
+  const pastGuessNames = new Set(
+    pastGuesses.map((guess) => (guess.name || guess).trim().toLowerCase())
   );
   const filteredSuggestions = suggestions
-    .filter((name) => !incorrectGuessNames.has(name.trim().toLowerCase()))
+    .filter((name) => !pastGuessNames.has(name.trim().toLowerCase()))
     .slice(0, 8);
 
   useEffect(() => {
@@ -64,7 +64,7 @@ export function NameGuessInput({ value, onChange, incorrectGuesses }) {
   }, [value]);
 
   return (
-    <div style={{ position: 'relative', width: '300px' }}>
+    <div style={{ position: 'relative', width: 'min(100%, 300px)' }}>
       <input
         type="text"
         value={value}
@@ -75,7 +75,8 @@ export function NameGuessInput({ value, onChange, incorrectGuesses }) {
         onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
         placeholder="Guess a player..."
         style={{
-          flex: 1,
+          width: '100%',
+          boxSizing: 'border-box',
           padding: '12px 14px',
           fontSize: '16px',
           borderRadius: '8px',
@@ -85,9 +86,9 @@ export function NameGuessInput({ value, onChange, incorrectGuesses }) {
 
       {showSuggestions && filteredSuggestions.length > 0 && (
         <ul style={{ position: 'absolute', background: 'white', border: '1px solid #ccc', width: '100%', zIndex: 10 }}>
-          {filteredSuggestions.map((name) => (
+          {filteredSuggestions.map((name, index) => (
             <ul 
-              key={name}
+              key={`${name}-${index}`}
               onMouseDown={() => {
                 onChange(name);
                 setShowSuggestions(false);

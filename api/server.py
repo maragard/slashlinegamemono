@@ -19,6 +19,7 @@ CSV_PATH = os.path.join(BASE_DIR, "players.csv")
 NAME_DETECTOR = re.compile(r"\w+(\s){1}\w+")
 
 chosen = ""
+chosen_id = None
 statline = ""
 GLOBAL_NAMES_CACHE: List[str] = []
 
@@ -29,6 +30,63 @@ GLOBAL_NAMES_CACHE: List[str] = []
 
 def _connect_db():
     return sqlite3.connect(DB_URI, uri=True)
+
+
+def _player_hints(player, target):
+    def split_values(value):
+        return {
+            part.strip().casefold()
+            for part in re.split(r",|\s+and\s+", value or "", flags=re.IGNORECASE)
+            if part.strip()
+        }
+
+    def compare_year(guess_year, target_year):
+        if not guess_year or not target_year:
+            return None
+
+        if guess_year == target_year:
+            return "correct"
+
+        try:
+            if int(guess_year) // 10 == int(target_year) // 10:
+                return "decade"
+        except ValueError:
+            return None
+
+        return None
+
+    def compare_values(guess_value, target_value):
+        guess_values = split_values(guess_value)
+        target_values = split_values(target_value)
+        if not guess_values or not target_values:
+            return None
+        if guess_values == target_values:
+            return "correct"
+        if guess_values & target_values:
+            return "partial"
+        return None
+
+    return {
+        "debut_year": compare_year(player[3], target[3]),
+        "retirement_year": compare_year(player[4], target[4]),
+        "position": compare_values(player[2], target[2]),
+        "team": compare_values(player[1], target[1]),
+    }
+
+
+def _player_info(player_id, player):
+    return {
+        "id": player_id,
+        "name": player[0],
+        "team": player[1],
+        "position": player[2],
+        "debut_year": player[3],
+        "retirement_year": player[4],
+        "plate_apps": player[5],
+        "avg": player[6],
+        "obp": player[7],
+        "slg": player[8],
+    }
 
 
 ###############################################################################
@@ -64,6 +122,7 @@ def init_db(csv_path=CSV_PATH):
         curr.execute(
             """
             CREATE TABLE IF NOT EXISTS todays_player (
+                player_id INTEGER,
                 name TEXT PRIMARY KEY,
                 team TEXT,
                 position TEXT,
@@ -147,10 +206,10 @@ def select_new_player():
         curr.execute (
                 """
                 INSERT INTO todays_player
-                (name, team, position, debut_year, retirement_year, avg, obp, slg)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (player_id, name, team, position, debut_year, retirement_year, avg, obp, slg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                player[1:],
+            (player[0], *player[1:]),
             )
 
         conn.commit()
@@ -163,20 +222,21 @@ def load_current_player():
 
     Returns None
     """
-    global chosen, statline
+    global chosen, chosen_id, statline
 
     with closing(_connect_db()) as conn:
         curr = conn.cursor()
 
         target = curr.execute (
             """
-            SELECT name, team, position, debut_year, retirement_year, avg, obp, slg
+            SELECT player_id, name, team, position, debut_year, retirement_year, avg, obp, slg
             FROM todays_player
             """
         ).fetchone()
         
     print(target)
-    chosen = target
+    chosen_id = target[0]
+    chosen = target[1:]
     statline = "/".join(target[-3:]).strip("'")
     return
 
@@ -292,23 +352,67 @@ async def guess_player(request: Request):
     if unique_id is None and not guess_name:
         return PlainTextResponse("Missing necessary fields", status_code=400)
 
-    if guess_name and guess_name == chosen[0].strip("'"):
-        return JSONResponse(content={"success": True, "msg": "You did it!"})
-
-    if unique_id is not None:
+    if guess_name:
         with closing(_connect_db()) as conn:
-            player = conn.execute(
-                "SELECT name FROM players WHERE id = ?",
+            players = conn.execute(
+                """
+                SELECT id, name, team, position, debut_year, retirement_year,
+                       plate_apps, avg, obp, slg
+                FROM players
+                WHERE name = ? COLLATE NOCASE
+                """,
+                (guess_name.strip(),),
+            ).fetchall()
+
+        if not players:
+            raise HTTPException(
+                status_code=404,
+                detail="Player not found in our database. Please choose a player from the suggestions.",
+            )
+
+        if len(players) > 1:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": "Multiple players have that name. Choose the correct player.",
+                    "candidates": [
+                        _player_info(record[0], record[1:])
+                        for record in players
+                    ],
+                },
+                headers={"X-Player-Candidates": "available"},
+            )
+        unique_id, *player = players[0]
+    elif unique_id is not None:
+        with closing(_connect_db()) as conn:
+            record = conn.execute(
+                """
+                SELECT id, name, team, position, debut_year, retirement_year,
+                       plate_apps, avg, obp, slg
+                FROM players
+                WHERE id = ?
+                """,
                 (unique_id,),
             ).fetchone()
 
-        success = bool(player and player[0] == chosen[0].strip("'"))
-        return JSONResponse({
+        if not record:
+            raise HTTPException(status_code=404, detail="Player not found in our database.")
+        unique_id, *player = record
+    else:
+        raise HTTPException(status_code=400, detail="Missing player name or ID.")
+
+    player_info = _player_info(unique_id, player)
+    hints = _player_hints(player, chosen)
+    success = int(unique_id) == int(chosen_id)
+
+    return JSONResponse(
+        content={
             "success": success,
             "msg": "You did it!" if success else "Try again",
-        })
-
-    return {"success": False, "msg": "Try again"}
+            "player": player_info,
+            "hints": hints,
+        }
+    )
 
 
 @app.get("/api/suggest", response_model=List[str])

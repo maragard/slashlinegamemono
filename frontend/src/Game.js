@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { NameGuessInput } from './NameGuessInput';
 import { PopupFrame } from './PopupFrame.js';
-import { IncorrectGuesses } from './IncorrectGuesses';
+import { PastGuesses } from './PastGuesses';
+import './Game.css';
 
 const API_BASE_URL = "/api";
 const API_URL = `${API_BASE_URL}/guess-player`;
@@ -14,7 +15,8 @@ export default function Game() {
   const [loading, setLoading] = useState(false);
   const [startHint, setStartHint] = useState('Loading hint...');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
-  const [incorrectGuesses, setIncorrectGuesses] = useState([]);
+  const [pastGuesses, setPastGuesses] = useState([]);
+  const [duplicateCandidates, setDuplicateCandidates] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -44,16 +46,7 @@ export default function Game() {
     };
   }, []);
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-
-    const trimmedName = playerName.trim();
-    if (!trimmedName) {
-      setError('Please enter a player name.');
-      setResult(null);
-      return;
-    }
-
+  const submitGuess = async (guess) => {
     setLoading(true);
     setError('');
     setResult(null);
@@ -64,24 +57,57 @@ export default function Game() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: trimmedName }),
+        body: JSON.stringify(guess),
       });
 
       const data = await response.json();
+
+      if (response.status === 409 && Array.isArray(data.candidates)) {
+        setDuplicateCandidates(data.candidates);
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(data?.detail || data?.error || 'Something went wrong.');
       }
 
-      setResult(data);
-      if (!data.success) {
-        setIncorrectGuesses((guesses) => [...guesses, trimmedName]);
+      if (!data.player?.name) {
+        throw new Error(
+          'Player not found in our database. Please choose a player from the suggestions.'
+        );
       }
+
+      setResult(data);
+      setDuplicateCandidates([]);
+      setPastGuesses((guesses) => [
+        ...guesses,
+        { ...data.player, isCorrect: data.success, hints: data.hints || {} },
+      ]);
     } catch (err) {
       setError(err.message || 'Failed to fetch player information.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+
+    const trimmedName = playerName.trim();
+    if (!trimmedName) {
+      setError('Please enter a player name.');
+      setResult(null);
+      return;
+    }
+
+    setPlayerName('');
+    setDuplicateCandidates([]);
+    submitGuess({ name: trimmedName });
+  };
+
+  const handleCandidateSelect = (player) => {
+    setDuplicateCandidates([]);
+    submitGuess({ id: player.id });
   };
 
   return (
@@ -95,28 +121,20 @@ export default function Game() {
         <ol>
           <li>Guess a player based on the given slashline.</li>
           <li>Only players who have more than 1000 plate appearances are eligible.</li>
+          <li>Orange means a year is in the same decade, but not an exact year, or some positions or teams overlap.</li>
+          <li>Green means the year matches exactly, or the full position or team list matches.</li>
           <li>More rules to follow</li>
         </ol>
       </PopupFrame>
-      <div
-        style={{
-          maxWidth: '600px',
-          margin: '40px auto',
-          padding: '24px',
-          fontFamily: 'Arial, sans-serif',
-          background: '#f7f7f7',
-          borderRadius: '12px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-        }}
-      >
+      <main className="game-panel">
         <h1 style={{ marginBottom: '12px', fontSize: '28px' }}>{startHint}</h1>
         <h2 style={{ marginBottom: '20px' }}>Who's That Player?</h2>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+        <form className="game-form" onSubmit={handleSubmit}>
           <NameGuessInput 
             value={playerName}
             onChange={setPlayerName}
-            incorrectGuesses={incorrectGuesses}
+            pastGuesses={pastGuesses}
           />
           <button
             type="submit"
@@ -137,37 +155,44 @@ export default function Game() {
         </form>
 
         {error && (
-          <p style={{ color: '#b91c1c', marginBottom: '16px' }} role="alert">
+          <p className="game-error" role="alert">
             {error}
           </p>
         )}
 
-        {result && (
-          <section>
-            <div
-              style={{
-                background: '#fff',
-                borderRadius: '8px',
-                padding: '16px',
-                border: '1px solid #e5e7eb',
-              }}
-            >
-              <p
-                style={{
-                  margin: 0,
-                  color: result.success ? '#166534' : '#b91c1c',
-                  fontWeight: '600',
-                }}
-              >
-                {result.msg || (result.success ? 'You did it!' : 'Try again.')}
-              </p>
-            </div>
+        {duplicateCandidates.length > 0 && (
+          <section className="duplicate-players" aria-labelledby="duplicate-players-heading">
+            <h3 id="duplicate-players-heading">Choose the player you meant</h3>
+            <p>These players share that name. Select the matching player record:</p>
+            <ul>
+              {duplicateCandidates.map((player) => (
+                <li key={player.id}>
+                  <button
+                    className="duplicate-player-option"
+                    type="button"
+                    disabled={loading}
+                    onClick={() => handleCandidateSelect(player)}
+                  >
+                    <strong>{player.name}</strong>
+                    <span>{[player.team, player.position, player.debut_year, player.retirement_year]
+                      .filter(Boolean)
+                      .join(' · ')}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </section>
         )}
 
-        <IncorrectGuesses guesses={incorrectGuesses} />
-      </div>
-      <button onClick={() => setIsPopupOpen(true)}>
+        {result && (
+          <p className={`game-result${result.success ? ' game-result--success' : ''}`}>
+            {result.msg || (result.success ? 'You did it!' : 'Try again.')}
+          </p>
+        )}
+
+        <PastGuesses guesses={pastGuesses} />
+      </main>
+      <button className="game-rules-button" onClick={() => setIsPopupOpen(true)}>
         Rules
       </button>
     </div>

@@ -1,0 +1,243 @@
+.past-guesses {
+  margin-top: 24px;
+  color: #fff;
+  text-align: left;
+}
+
+.past-guesses__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.past-guesses__heading h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.past-guesses__heading span {
+  color: #c1cbd5;
+  font-size: 13px;
+}
+
+.past-guesses__table-scroll {
+  max-height: 350px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid #52606d;
+  border-radius: 6px;
+  background: #202b36;
+}
+
+.past-guesses__table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: #fff;
+  font-size: 13px;
+}
+
+.past-guesses__table th:first-child {
+  width: 24%;
+}
+
+.past-guesses__table th:nth-child(2) {
+  width: 12%;
+}
+
+.past-guesses__table th:nth-child(3) {
+  width: 18%;
+}
+
+.past-guesses__table th:nth-child(4),
+.past-guesses__table th:nth-child(5) {
+  width: 7%;
+}
+
+.past-guesses__table th:nth-child(n + 6) {
+  width: 8%;
+}
+
+.past-guesses__table th:nth-child(n + 4),
+.past-guesses__table td:nth-child(n + 3) {
+  padding-right: 3px;
+  padding-left: 3px;
+}
+
+.past-guesses__table th,
+.past-guesses__table td {
+  padding: 10px 12px;
+  box-shadow: inset -1px 0 #465360, inset 0 -1px #465360;
+  position: relative;
+  z-index: 0;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.past-guesses__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #111820;
+  color: #fff;
+  font-weight: 700;
+}
+
+.past-guesses__table thead th:first-child {
+  left: 0;
+  z-index: 2;
+}
+
+.past-guesses__table tbody th[scope='row'] {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #293642;
+  color: #fff;
+  text-align: left;
+  font-weight: 700;
+}
+
+.past-guesses__table tbody tr:nth-child(even) td {
+  background: #26323d;
+}
+
+.past-guesses__table tbody tr.past-guesses__player-row--correct {
+  background: #63d47b;
+  color: #111820;
+}
+
+.past-guesses__table tbody tr.past-guesses__player-row--correct > th,
+.past-guesses__table tbody tr.past-guesses__player-row--correct > td {
+  background: #63d47b;
+  color: #111820;
+}
+
+.past-guesses__table tbody td.past-guesses__cell--hint-partial {
+  background: #f4a340;
+  color: #111820;
+}
+
+.past-guesses__table tbody td.past-guesses__cell--hint-correct {
+  background: #63d47b;
+  color: #111820;
+}
+
+.past-guesses__player-row > th,
+.past-guesses__player-row > td {
+  animation: past-guesses-cell-flip 1250ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+  backface-visibility: hidden;
+  transform-origin: center top;
+}
+
+.past-guesses__player-row > :nth-child(2) {
+  animation-delay: 118ms;
+}
+
+.past-guesses__player-row > :nth-child(3) {
+  animation-delay: 235ms;
+}
+
+.past-guesses__player-row > :nth-child(4) {
+  animation-delay: 351ms;
+}
+
+.past-guesses__player-row > :nth-child(5) {
+  animation-delay: 469ms;
+}
+
+.past-guesses__player-row > :nth-child(6) {
+  animation-delay: 586ms;
+}
+
+.past-guesses__player-row > :nth-child(7) {
+  animation-delay: 704ms;
+}
+
+.past-guesses__player-row > :nth-child(8) {
+  animation-delay: 820ms;
+}
+
+.past-guesses__player-row > :nth-child(9) {
+  animation-delay: 938ms;
+}
+
+@keyframes past-guesses-cell-flip {
+  from {
+    opacity: 0;
+    transform: perspective(600px) rotateX(90deg);
+  }
+
+  to {
+    opacity: 1;
+    transform: perspective(600px) rotateX(0);
+  }
+}
+
+.past-guesses__empty-row {
+  height: 42px;
+}
+
+.past-guesses__empty-row th,
+.past-guesses__empty-row td {
+  background: #202b36;
+}
+
+.past-guesses__empty-row:nth-child(even) th,
+.past-guesses__empty-row:nth-child(even) td {
+  background: #26323d;
+}
+
+.past-guesses__table tbody tr:last-child th,
+.past-guesses__table tbody tr:last-child td {
+  box-shadow: inset -1px 0 #465360;
+}
+
+.past-guesses__table th:last-child,
+.past-guesses__table td:last-child {
+  box-shadow: inset 0 -1px #465360;
+}
+
+.past-guesses__table tbody tr:last-child th:last-child,
+.past-guesses__table tbody tr:last-child td:last-child {
+  box-shadow: none;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 640px) {
+  .past-guesses__table-scroll {
+    overflow-x: auto;
+  }
+
+  .past-guesses__table {
+    min-width: 680px;
+    font-size: 12px;
+  }
+
+  .past-guesses__table th,
+  .past-guesses__table td {
+    padding: 9px 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .past-guesses__player-row > th,
+  .past-guesses__player-row > td {
+    animation: none;
+  }
+}
