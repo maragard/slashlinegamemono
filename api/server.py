@@ -18,10 +18,24 @@ CSV_PATH = os.path.join(BASE_DIR, "players.csv")
 
 NAME_DETECTOR = re.compile(r"\w+(\s){1}\w+")
 
-chosen = ""
-chosen_id = None
-statline = ""
-GLOBAL_NAMES_CACHE: List[str] = []
+GLOBAL_NAMES_CACHE: Dict[str, List[str]] = {}
+GAME_MODES = {
+    "all-time": {
+        "name": "All Time",
+        "years": "1871–Present (all players)",
+        "minimum_debut_year": None,
+    },
+    "post-integration": {
+        "name": "Post-Integration",
+        "years": "1950–Present",
+        "minimum_debut_year": 1950,
+    },
+    "30-team-era": {
+        "name": "30 Team Era",
+        "years": "1998–Present",
+        "minimum_debut_year": 1998,
+    },
+}
 
 ###############################################################################
 ##############                 Helper functions                 ###############
@@ -30,6 +44,19 @@ GLOBAL_NAMES_CACHE: List[str] = []
 
 def _connect_db():
     return sqlite3.connect(DB_URI, uri=True)
+
+
+def _game_mode(mode):
+    if mode not in GAME_MODES:
+        raise HTTPException(status_code=422, detail="Invalid game mode.")
+    return GAME_MODES[mode]
+
+
+def _pool_predicate(mode):
+    minimum_year = _game_mode(mode)["minimum_debut_year"]
+    if minimum_year is None:
+        return "1 = 1", ()
+    return "CAST(debut_year AS INTEGER) >= ?", (minimum_year,)
 
 
 def _player_hints(player, target):
@@ -121,9 +148,10 @@ def init_db(csv_path=CSV_PATH):
 
         curr.execute(
             """
-            CREATE TABLE IF NOT EXISTS todays_player (
+            CREATE TABLE IF NOT EXISTS todays_players (
+                mode TEXT PRIMARY KEY,
                 player_id INTEGER,
-                name TEXT PRIMARY KEY,
+                name TEXT,
                 team TEXT,
                 position TEXT,
                 debut_year TEXT,
@@ -179,84 +207,83 @@ def init_db(csv_path=CSV_PATH):
     return
 
 
-def select_new_player():
-    """
-    Chooses a player at random from the full list
-    and stores them in todays_player. 
-
-    Returns None
-    """
+def select_new_player(mode="all-time"):
+    """Choose a random player from the selected mode's pool."""
+    predicate, parameters = _pool_predicate(mode)
     with closing(_connect_db()) as conn:
         curr = conn.cursor()
 
-        # Find new player
-        player = curr.execute (
-            """
+        player = curr.execute(
+            f"""
             SELECT id, name, team, position, debut_year, retirement_year, avg, obp, slg
             FROM players
+            WHERE ({predicate})
+              AND id NOT IN (SELECT player_id FROM todays_players)
             ORDER BY RANDOM()
             LIMIT 1
-            """
+            """,
+            parameters,
         ).fetchone()
 
-        # Reset todays_player
-        curr.execute ("DELETE FROM todays_player")
-        # Set new value for todays_player
-        print(player)
-        curr.execute (
-                """
-                INSERT INTO todays_player
-            (player_id, name, team, position, debut_year, retirement_year, avg, obp, slg)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-            (player[0], *player[1:]),
-            )
+        if player is None:
+            raise ValueError(f"No players are available for the {GAME_MODES[mode]['name']} mode.")
+
+        curr.execute(
+            """
+            INSERT OR REPLACE INTO todays_players
+            (mode, player_id, name, team, position, debut_year, retirement_year, avg, obp, slg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (mode, *player),
+        )
 
         conn.commit()
-    return
 
 
-def load_current_player():
-    """
-    Initialize global variables by fetching todays_players
-
-    Returns None
-    """
-    global chosen, chosen_id, statline
-
+def load_current_player(mode="all-time"):
     with closing(_connect_db()) as conn:
-        curr = conn.cursor()
-
-        target = curr.execute (
+        target = conn.execute(
             """
             SELECT player_id, name, team, position, debut_year, retirement_year, avg, obp, slg
-            FROM todays_player
-            """
+            FROM todays_players
+            WHERE mode = ?
+            """,
+            (mode,),
         ).fetchone()
-        
-    print(target)
-    chosen_id = target[0]
-    chosen = target[1:]
-    statline = "/".join(target[-3:]).strip("'")
-    return
+    return target
 
 
-def get_eligible_names():
-    """
-    Generates a flat array of all valid guessing names.
-    Cached on the client to power instant autocomplete.
+def get_revealed_player(mode="all-time"):
+    target = load_current_player(mode)
+    if target is None:
+        raise HTTPException(status_code=404, detail="No player is selected for this game mode.")
 
-    Returns None
-    """
-    global GLOBAL_NAMES_CACHE
+    predicate, parameters = _pool_predicate(mode)
     with closing(_connect_db()) as conn:
-        curr = conn.cursor()
-        # Fetch all names at once
-        curr.execute ("SELECT name FROM players ORDER BY name ASC")
-        
-        # Flatten and save into memory
-        GLOBAL_NAMES_CACHE = [row[0] for row in curr.fetchall()]
-        print(f"Loaded {len(GLOBAL_NAMES_CACHE)} names safely into backend memory.")
+        player = conn.execute(
+            f"""
+            SELECT id, name, team, position, debut_year, retirement_year,
+                   plate_apps, avg, obp, slg
+            FROM players
+            WHERE ({predicate}) AND id = ?
+            """,
+            (*parameters, target[0]),
+        ).fetchone()
+
+    if player is None:
+        raise HTTPException(status_code=404, detail="The selected player was not found.")
+    return _player_info(player[0], player[1:])
+
+
+def get_eligible_names(mode="all-time"):
+    """Cache valid guessing names for one mode's player pool."""
+    predicate, parameters = _pool_predicate(mode)
+    with closing(_connect_db()) as conn:
+        rows = conn.execute(
+            f"SELECT name FROM players WHERE {predicate} ORDER BY name ASC",
+            parameters,
+        ).fetchall()
+    GLOBAL_NAMES_CACHE[mode] = [row[0] for row in rows]
 
 ###############################################################################
 ##############               Application Setup                  ###############
@@ -271,9 +298,9 @@ async def lifecycle(app: FastAPI):
     # on_event("startup"): setup backend
     database = _connect_db()
     init_db()
-    select_new_player()
-    load_current_player()
-    get_eligible_names()
+    for mode in GAME_MODES:
+        select_new_player(mode)
+        get_eligible_names(mode)
 
     yield
 
@@ -310,15 +337,15 @@ async def health_check():
 
 
 @app.get("/api/reset")
-def reset_game():
+def reset_game(mode: str = Query("all-time")):
     """
     Choose a new player from the db, and set up the global vars
     
     Returns None
     """
+    _game_mode(mode)
     try:
-        select_new_player()
-        load_current_player()
+        select_new_player(mode)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except sqlite3.Error as e:
@@ -326,17 +353,32 @@ def reset_game():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unknown error: {str(e)}")
     else:   
-        return JSONResponse(content={"msg": "Game reset successfully"})
+        return JSONResponse(content={"msg": "Game reset successfully", "mode": mode})
 
 
-@app.get("/api/start", response_model=Dict[str, str])
-async def starting_info():
+@app.get("/api/start")
+async def starting_info(mode: str = Query("all-time")):
     """
     Send the starting guess for the game
 
     Return JSON
     """
-    return JSONResponse(content={"hint": statline})
+    game_mode = _game_mode(mode)
+    target = load_current_player(mode)
+    if target is None:
+        raise HTTPException(status_code=404, detail="No player is selected for this game mode.")
+    return JSONResponse(content={
+        "hint": "/".join(target[-3:]).strip("'"),
+        "mode": mode,
+        "mode_name": game_mode["name"],
+        "years": game_mode["years"],
+    })
+
+
+@app.get("/api/reveal-player")
+async def reveal_player(mode: str = Query("all-time")):
+    _game_mode(mode)
+    return JSONResponse(content={"player": get_revealed_player(mode)})
 
 
 @app.post("/api/guess-player")
@@ -348,6 +390,8 @@ async def guess_player(request: Request):
 
     unique_id = data.get("id")
     guess_name = data.get("name")
+    mode = data.get("mode", "all-time")
+    predicate, parameters = _pool_predicate(mode)
 
     if unique_id is None and not guess_name:
         return PlainTextResponse("Missing necessary fields", status_code=400)
@@ -355,19 +399,19 @@ async def guess_player(request: Request):
     if guess_name:
         with closing(_connect_db()) as conn:
             players = conn.execute(
-                """
+                f"""
                 SELECT id, name, team, position, debut_year, retirement_year,
                        plate_apps, avg, obp, slg
                 FROM players
-                WHERE name = ? COLLATE NOCASE
+                WHERE ({predicate}) AND name = ? COLLATE NOCASE
                 """,
-                (guess_name.strip(),),
+                (*parameters, guess_name.strip()),
             ).fetchall()
 
         if not players:
             raise HTTPException(
                 status_code=404,
-                detail="Player not found in our database. Please choose a player from the suggestions.",
+                detail="Player not found in this game mode. Please choose a player from the suggestions.",
             )
 
         if len(players) > 1:
@@ -386,24 +430,27 @@ async def guess_player(request: Request):
     elif unique_id is not None:
         with closing(_connect_db()) as conn:
             record = conn.execute(
-                """
+                f"""
                 SELECT id, name, team, position, debut_year, retirement_year,
                        plate_apps, avg, obp, slg
                 FROM players
-                WHERE id = ?
+                WHERE ({predicate}) AND id = ?
                 """,
-                (unique_id,),
+                (*parameters, unique_id),
             ).fetchone()
 
         if not record:
-            raise HTTPException(status_code=404, detail="Player not found in our database.")
+            raise HTTPException(status_code=404, detail="Player not found in this game mode.")
         unique_id, *player = record
     else:
         raise HTTPException(status_code=400, detail="Missing player name or ID.")
 
+    target = load_current_player(mode)
+    if target is None:
+        raise HTTPException(status_code=404, detail="No player is selected for this game mode.")
     player_info = _player_info(unique_id, player)
-    hints = _player_hints(player, chosen)
-    success = int(unique_id) == int(chosen_id)
+    hints = _player_hints(player, target[1:])
+    success = int(unique_id) == int(target[0])
 
     return JSONResponse(
         content={
@@ -416,16 +463,21 @@ async def guess_player(request: Request):
 
 
 @app.get("/api/suggest", response_model=List[str])
-def suggest_names(request: Request, q: str = Query(..., min_length=3)):
+def suggest_names(
+    request: Request,
+    q: str = Query(..., min_length=3),
+    mode: str = Query("all-time"),
+):
     """
     Searches the server-side memory array. 
     Only returns a set number of matches, keeping the master list hidden.
     """
     query = q.strip().lower()
     matches = []
+    _game_mode(mode)
     
     # Filter through RAM list
-    for name in GLOBAL_NAMES_CACHE:
+    for name in GLOBAL_NAMES_CACHE.get(mode, []):
         if query in name.lower():
             matches.append(name)
         # Hard limit on returned elements protects your list

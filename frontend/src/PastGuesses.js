@@ -61,47 +61,79 @@ function hintStyle(hint) {
   return undefined;
 }
 
-export function PastGuesses({ guesses }) {
-  const rows = Array.from({ length: Math.max(7, guesses.length) }, (_, index) => guesses[index]);
+function PlayerTableHeader() {
+  return (
+    <thead>
+      <tr>
+        <th scope="col">Player</th>
+        <th scope="col">Position(s)</th>
+        <th scope="col">Team(s)</th>
+        <th scope="col">Debut</th>
+        <th scope="col">Retired</th>
+        <th scope="col">AVG</th>
+        <th scope="col">OBP</th>
+        <th scope="col">SLG</th>
+      </tr>
+    </thead>
+  );
+}
+
+function PlayerTableRow({ player }) {
+  return (
+    <tr className={`past-guesses__player-row${player.isCorrect ? ' past-guesses__player-row--correct' : ''}`}>
+      <th scope="row">{player.name || ''}</th>
+      <td className={hintClass(player.hints?.position)} style={hintStyle(player.hints?.position)}>{player.position ? abbreviatePositions(player.position) : ''}</td>
+      <td className={hintClass(player.hints?.team)} style={hintStyle(player.hints?.team)}>{player.team ? formatTeams(player.team) : ''}</td>
+      <td className={hintClass(player.hints?.debut_year)} style={hintStyle(player.hints?.debut_year)}>{player.debut_year || ''}</td>
+      <td className={hintClass(player.hints?.retirement_year)} style={hintStyle(player.hints?.retirement_year)}>{player.retirement_year || ''}</td>
+      <td>{player.avg || ''}</td>
+      <td>{player.obp || ''}</td>
+      <td>{player.slg || ''}</td>
+    </tr>
+  );
+}
+
+export function RevealedPlayer({ player }) {
+  return (
+    <div className="past-guesses__table-scroll revealed-player">
+      <table className="past-guesses__table">
+        <caption className="visually-hidden">Revealed player details</caption>
+        <PlayerTableHeader />
+        <tbody>
+          <PlayerTableRow player={{ ...player, isCorrect: true }} />
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function PastGuesses({ guesses, title = 'Past guesses', minimumRows = 9 }) {
+  const rows = Array.from(
+    { length: Math.max(minimumRows, guesses.length) },
+    (_, index) => guesses[index]
+  );
+  const headingId = title === 'Free Play' ? 'free-play-heading' : 'past-guesses-heading';
 
   return (
-    <section className="past-guesses" aria-labelledby="past-guesses-heading">
+    <section className="past-guesses" aria-labelledby={headingId}>
       <div className="past-guesses__heading">
-        <h3 id="past-guesses-heading">Past guesses</h3>
+        <h3 id={headingId}>{title}</h3>
         <span>{guesses.length} {guesses.length === 1 ? 'guess' : 'guesses'}</span>
       </div>
       <div className="past-guesses__table-scroll">
         <table className="past-guesses__table">
           <caption className="visually-hidden">Player details for each past guess</caption>
-          <thead>
-            <tr>
-              <th scope="col">Player</th>
-              <th scope="col">Position(s)</th>
-              <th scope="col">Team(s)</th>
-              <th scope="col">Debut</th>
-              <th scope="col">Retired</th>
-              <th scope="col">AVG</th>
-              <th scope="col">OBP</th>
-              <th scope="col">SLG</th>
-            </tr>
-          </thead>
+          <PlayerTableHeader />
           <tbody>
             {rows.map((guess, index) => (
-              <tr
-                key={guess ? `${guess.name}-${index}` : `empty-${index}`}
-                className={guess
-                  ? `past-guesses__player-row${guess.isCorrect ? ' past-guesses__player-row--correct' : ''}`
-                  : 'past-guesses__empty-row'}
-              >
-                <th scope="row">{guess?.name || ''}</th>
-                <td className={hintClass(guess?.hints?.position)} style={hintStyle(guess?.hints?.position)}>{guess?.position ? abbreviatePositions(guess.position) : ''}</td>
-                <td className={hintClass(guess?.hints?.team)} style={hintStyle(guess?.hints?.team)}>{guess?.team ? formatTeams(guess.team) : ''}</td>
-                <td className={hintClass(guess?.hints?.debut_year)} style={hintStyle(guess?.hints?.debut_year)}>{guess?.debut_year || ''}</td>
-                <td className={hintClass(guess?.hints?.retirement_year)} style={hintStyle(guess?.hints?.retirement_year)}>{guess?.retirement_year || ''}</td>
-                <td>{guess?.avg || ''}</td>
-                <td>{guess?.obp || ''}</td>
-                <td>{guess?.slg || ''}</td>
-              </tr>
+              guess
+                ? <PlayerTableRow key={`${guess.name}-${index}`} player={guess} />
+                : (
+                  <tr key={`empty-${index}`} className="past-guesses__empty-row">
+                    <th scope="row" />
+                    <td /><td /><td /><td /><td /><td /><td />
+                  </tr>
+                )
             ))}
           </tbody>
         </table>

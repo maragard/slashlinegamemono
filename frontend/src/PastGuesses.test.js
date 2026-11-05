@@ -2,12 +2,12 @@ import React from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { PastGuesses } from './PastGuesses';
 
-test('prepopulates seven blank past-guess rows', () => {
+test('prepopulates nine blank past-guess rows', () => {
   render(<PastGuesses guesses={[]} />);
 
   expect(screen.getByText('0 guesses')).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Past guesses' })).toBeInTheDocument();
-  expect(screen.getAllByRole('row')).toHaveLength(8);
+  expect(screen.getAllByRole('row')).toHaveLength(10);
   const firstBlankRow = screen.getAllByRole('row')[1];
   expect(within(firstBlankRow).getAllByRole('cell')).toHaveLength(7);
   within(firstBlankRow).getAllByRole('cell').forEach((cell) => {

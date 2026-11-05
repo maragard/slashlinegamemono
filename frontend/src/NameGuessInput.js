@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-export function NameGuessInput({ value, onChange, pastGuesses }) {
+export function NameGuessInput({ value, onChange, pastGuesses, mode, disabled = false }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionCache = useRef(new Map());
@@ -12,7 +12,7 @@ export function NameGuessInput({ value, onChange, pastGuesses }) {
     .slice(0, 8);
 
   useEffect(() => {
-    const query = value.trim();
+    const query = disabled ? '' : value.trim();
     if (query.length < 3) {
       setSuggestions([]);
       return;
@@ -20,12 +20,13 @@ export function NameGuessInput({ value, onChange, pastGuesses }) {
 
     let isCurrentQuery = true;
     const delayDebounceTimer = setTimeout(() => {
-      const cachedResult = suggestionCache.current.get(query);
+      const cacheKey = `${mode}:${query}`;
+      const cachedResult = suggestionCache.current.get(cacheKey);
       const headers = cachedResult?.etag
         ? { 'If-None-Match': cachedResult.etag }
         : {};
 
-      fetch(`/api/suggest?q=${encodeURIComponent(query)}`, { headers })
+      fetch(`/api/suggest?q=${encodeURIComponent(query)}&mode=${encodeURIComponent(mode)}`, { headers })
         .then(async (response) => {
           if (response.status === 304) {
             if (!cachedResult) {
@@ -39,7 +40,7 @@ export function NameGuessInput({ value, onChange, pastGuesses }) {
           }
 
           const data = await response.json();
-          suggestionCache.current.set(query, {
+          suggestionCache.current.set(cacheKey, {
             suggestions: data,
             etag: response.headers.get('ETag'),
           });
@@ -61,13 +62,14 @@ export function NameGuessInput({ value, onChange, pastGuesses }) {
       isCurrentQuery = false;
       clearTimeout(delayDebounceTimer);
     };
-  }, [value]);
+  }, [disabled, mode, value]);
 
   return (
     <div style={{ position: 'relative', width: 'min(100%, 300px)' }}>
       <input
         type="text"
         value={value}
+        disabled={disabled}
         onChange={(e) => {
           onChange(e.target.value);
           setShowSuggestions(true);

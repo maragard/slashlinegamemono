@@ -1,6 +1,18 @@
+import sqlite3
 import unittest
 
-from server import _player_hints, _player_info
+from fastapi import HTTPException
+from server import (
+    GAME_MODES,
+    _connect_db,
+    _player_hints,
+    _player_info,
+    _pool_predicate,
+    get_revealed_player,
+    init_db,
+    load_current_player,
+    select_new_player,
+)
 
 
 class PlayerHintsTests(unittest.TestCase):
@@ -60,3 +72,71 @@ class PlayerHintsTests(unittest.TestCase):
                 "team": "partial",
             },
         )
+
+
+class GameModeTests(unittest.TestCase):
+    def test_modes_define_expected_debut_year_ranges(self):
+        self.assertEqual(GAME_MODES["all-time"]["years"], "1871–Present (all players)")
+        self.assertEqual(GAME_MODES["post-integration"]["years"], "1950–Present")
+        self.assertEqual(GAME_MODES["30-team-era"]["years"], "1998–Present")
+
+    def test_pool_filters_include_the_starting_year(self):
+        connection = sqlite3.connect(":memory:")
+        connection.execute("CREATE TABLE players (debut_year TEXT)")
+        connection.executemany(
+            "INSERT INTO players (debut_year) VALUES (?)",
+            [("1949",), ("1950",), ("1997",), ("1998",)],
+        )
+
+        for mode, expected in (
+            ("all-time", ["1949", "1950", "1997", "1998"]),
+            ("post-integration", ["1950", "1997", "1998"]),
+            ("30-team-era", ["1998"]),
+        ):
+            predicate, parameters = _pool_predicate(mode)
+            rows = connection.execute(
+                f"SELECT debut_year FROM players WHERE {predicate} ORDER BY debut_year",
+                parameters,
+            ).fetchall()
+            self.assertEqual([row[0] for row in rows], expected)
+        connection.close()
+
+    def test_unknown_mode_is_rejected(self):
+        with self.assertRaises(HTTPException):
+            _pool_predicate("unknown")
+
+    def test_modes_have_distinct_players_and_reset_independently(self):
+        database = _connect_db()
+        try:
+            init_db()
+            for mode in GAME_MODES:
+                select_new_player(mode)
+            initial_players = {
+                mode: load_current_player(mode)[0]
+                for mode in GAME_MODES
+            }
+            self.assertEqual(len(set(initial_players.values())), len(GAME_MODES))
+            for mode, player_id in initial_players.items():
+                revealed = get_revealed_player(mode)
+                self.assertEqual(revealed["id"], player_id)
+                self.assertTrue(revealed["name"])
+                self.assertIn("avg", revealed)
+                self.assertIn("plate_apps", revealed)
+
+            select_new_player("post-integration")
+            reset_players = {
+                mode: load_current_player(mode)[0]
+                for mode in GAME_MODES
+            }
+
+            self.assertNotEqual(
+                initial_players["post-integration"],
+                reset_players["post-integration"],
+            )
+            self.assertEqual(initial_players["all-time"], reset_players["all-time"])
+            self.assertEqual(
+                initial_players["30-team-era"],
+                reset_players["30-team-era"],
+            )
+        finally:
+            database.close()

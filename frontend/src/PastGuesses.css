@@ -32,6 +32,11 @@
   background: #202b36;
 }
 
+.revealed-player {
+  margin: 0 0 16px;
+  text-align: left;
+}
+
 .past-guesses__table {
   width: 100%;
   table-layout: fixed;

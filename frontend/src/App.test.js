@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders learn react link', () => {
+test('renders the Slashline game and mode navigation', () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+  expect(screen.getByText('Slashline')).toBeInTheDocument();
+  expect(screen.getByRole('navigation', { name: 'Game modes' })).toBeInTheDocument();
 });
