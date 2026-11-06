@@ -26,6 +26,7 @@ export default function Game() {
   const [startHint, setStartHint] = useState('Loading hint...');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [duplicateCandidates, setDuplicateCandidates] = useState([]);
+  const [selectedPlayerId, setSelectedPlayerId] = useState(null);
   const selectedModeDetails = GAME_MODES.find((mode) => mode.id === selectedMode);
   const activeGame = gameStates[selectedMode] || { result: null, pastGuesses: [] };
   const hasWon = Boolean(activeGame.result?.success);
@@ -40,6 +41,7 @@ export default function Game() {
   const handleModeSelect = (mode) => {
     setSelectedMode(mode);
     setPlayerName('');
+    setSelectedPlayerId(null);
     setError('');
     setDuplicateCandidates([]);
     setStartHint('Loading hint...');
@@ -55,6 +57,7 @@ export default function Game() {
       },
     }));
     setPlayerName('');
+    setSelectedPlayerId(null);
     setError('');
   };
 
@@ -207,8 +210,11 @@ export default function Game() {
     }
 
     setPlayerName('');
+    setSelectedPlayerId(null);
     setDuplicateCandidates([]);
-    submitGuess({ name: trimmedName });
+    submitGuess(selectedPlayerId === null
+      ? { name: trimmedName }
+      : { id: selectedPlayerId });
   };
 
   const handleCandidateSelect = (player) => {
@@ -259,6 +265,7 @@ export default function Game() {
           <li>You have nine guesses per mode. After that, start Free Play to make unlimited additional guesses on a separate board.</li>
           <li>Orange means a year is in the same decade, but not an exact year, or some positions or teams overlap.</li>
           <li>Green means the year matches exactly, or the full position or team list matches.</li>
+          <li>Type at least 3 characters to get suggestions</li>
         </ol>
       </PopupFrame>
       <main className="game-panel">
@@ -282,7 +289,11 @@ export default function Game() {
             </span>
             <NameGuessInput
               value={playerName}
-              onChange={setPlayerName}
+              onChange={(name) => {
+                setPlayerName(name);
+                setSelectedPlayerId(null);
+              }}
+              onPlayerSelect={setSelectedPlayerId}
               pastGuesses={allGuesses}
               mode={selectedMode}
               disabled={loading || hasReachedGuessLimit}

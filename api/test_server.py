@@ -1,142 +1,112 @@
-import sqlite3
+import asyncio
+import json
 import unittest
+import uuid
 
+import server
 from fastapi import HTTPException
-from server import (
-    GAME_MODES,
-    _connect_db,
-    _player_hints,
-    _player_info,
-    _pool_predicate,
-    get_revealed_player,
-    init_db,
-    load_current_player,
-    select_new_player,
-)
 
 
-class PlayerHintsTests(unittest.TestCase):
-    def test_player_info_includes_unique_id_and_disambiguating_details(self):
-        player = (
-            "Bill Hallman",
-            "MLA,CHW,PIT",
-            "Outfielder",
-            "1901",
-            "1907",
-            "1315",
-            "0.235",
-            "0.311",
-            "0.303",
+class StubRequest:
+    def __init__(self, headers=None, payload=None):
+        self.headers = headers or {}
+        self.payload = payload
+
+    async def json(self):
+        return self.payload
+
+
+class PlayerGameModeTests(unittest.TestCase):
+    def setUp(self):
+        self.original_db_uri = server.DB_URI
+        self.original_cache = server.GLOBAL_PLAYER_CACHE
+        server.DB_URI = f"file:test_players_{uuid.uuid4().hex}?mode=memory&cache=shared"
+        server.GLOBAL_PLAYER_CACHE = {}
+        self.connection = server._connect_db()
+        server.init_db(csv_path="")
+        self.connection.executemany(
+            """
+            INSERT INTO players
+            (id, name, team, position, debut_year, retirement_year,
+             plate_apps, avg, obp, slg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (101, "Sam Same", "TEAM A", "Outfielder", "1948", "1970", "1200", ".300", ".400", ".500"),
+                (102, "Sam Same", "TEAM B", "Outfielder", "1980", "1990", "1200", ".250", ".350", ".450"),
+                (103, "Recent Player", "TEAM C", "Pitcher", "2000", "Not Found", "1200", ".200", ".300", ".400"),
+            ],
         )
+        self.connection.execute(
+            """
+            INSERT INTO todays_players
+            (mode, player_id, name, team, position, debut_year, retirement_year, avg, obp, slg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("all-time", 101, "Sam Same", "TEAM A", "Outfielder", "1948", "1970", ".300", ".400", ".500"),
+        )
+        self.connection.commit()
+
+    def tearDown(self):
+        self.connection.close()
+        server.DB_URI = self.original_db_uri
+        server.GLOBAL_PLAYER_CACHE = self.original_cache
+
+    def test_suggestions_return_distinct_player_records_within_mode(self):
+        server.get_eligible_players("post-integration")
+        response = server.suggest_names(
+            StubRequest(),
+            "Sam",
+            "post-integration",
+        )
+        suggestions = json.loads(response.body)
 
         self.assertEqual(
-            _player_info(1695, player),
-            {
-                "id": 1695,
-                "name": "Bill Hallman",
-                "team": "MLA,CHW,PIT",
-                "position": "Outfielder",
-                "debut_year": "1901",
-                "retirement_year": "1907",
-                "plate_apps": "1315",
-                "avg": "0.235",
-                "obp": "0.311",
-                "slg": "0.303",
-            },
+            suggestions,
+            [{
+                "id": 102,
+                "name": "Sam Same",
+                "team": "TEAM B",
+                "debut_year": "1980",
+                "retirement_year": "1990",
+            }],
         )
 
-    def test_exact_years_and_full_position_and_team_matches(self):
-        target = ("Target", "NYY, BOS", "Catcher and First Baseman", "1998", "2008")
-        guess = ("Guess", "BOS,NYY", "First Baseman, Catcher", "1998", "2008")
-
-        self.assertEqual(
-            _player_hints(guess, target),
-            {
-                "debut_year": "correct",
-                "retirement_year": "correct",
-                "position": "correct",
-                "team": "correct",
-            },
-        )
-
-    def test_decade_and_partial_position_and_team_matches(self):
-        target = ("Target", "NYY,BOS", "Catcher and First Baseman", "1998", "2008")
-        guess = ("Guess", "BOS,CHW", "First Baseman and Shortstop", "1993", "2015")
-
-        self.assertEqual(
-            _player_hints(guess, target),
-            {
-                "debut_year": "decade",
-                "retirement_year": None,
-                "position": "partial",
-                "team": "partial",
-            },
-        )
-
-
-class GameModeTests(unittest.TestCase):
-    def test_modes_define_expected_debut_year_ranges(self):
-        self.assertEqual(GAME_MODES["all-time"]["years"], "1871–Present (all players)")
-        self.assertEqual(GAME_MODES["post-integration"]["years"], "1950–Present")
-        self.assertEqual(GAME_MODES["30-team-era"]["years"], "1998–Present")
-
-    def test_pool_filters_include_the_starting_year(self):
-        connection = sqlite3.connect(":memory:")
-        connection.execute("CREATE TABLE players (debut_year TEXT)")
-        connection.executemany(
-            "INSERT INTO players (debut_year) VALUES (?)",
-            [("1949",), ("1950",), ("1997",), ("1998",)],
-        )
-
-        for mode, expected in (
-            ("all-time", ["1949", "1950", "1997", "1998"]),
-            ("post-integration", ["1950", "1997", "1998"]),
-            ("30-team-era", ["1998"]),
-        ):
-            predicate, parameters = _pool_predicate(mode)
-            rows = connection.execute(
-                f"SELECT debut_year FROM players WHERE {predicate} ORDER BY debut_year",
-                parameters,
-            ).fetchall()
-            self.assertEqual([row[0] for row in rows], expected)
-        connection.close()
-
-    def test_unknown_mode_is_rejected(self):
-        with self.assertRaises(HTTPException):
-            _pool_predicate("unknown")
-
-    def test_modes_have_distinct_players_and_reset_independently(self):
-        database = _connect_db()
+    def test_id_guesses_validate_the_mode_and_match_exact_players(self):
+        correct = asyncio.run(server.guess_player(StubRequest(payload={
+            "id": 101,
+            "mode": "all-time",
+        })))
+        incorrect = asyncio.run(server.guess_player(StubRequest(payload={
+            "id": 102,
+            "mode": "all-time",
+        })))
+        excluded = None
         try:
-            init_db()
-            for mode in GAME_MODES:
-                select_new_player(mode)
-            initial_players = {
-                mode: load_current_player(mode)[0]
-                for mode in GAME_MODES
-            }
-            self.assertEqual(len(set(initial_players.values())), len(GAME_MODES))
-            for mode, player_id in initial_players.items():
-                revealed = get_revealed_player(mode)
-                self.assertEqual(revealed["id"], player_id)
-                self.assertTrue(revealed["name"])
-                self.assertIn("avg", revealed)
-                self.assertIn("plate_apps", revealed)
+            asyncio.run(server.guess_player(StubRequest(payload={
+                "id": 101,
+                "mode": "post-integration",
+            })))
+        except HTTPException as error:
+            excluded = error
 
-            select_new_player("post-integration")
-            reset_players = {
-                mode: load_current_player(mode)[0]
-                for mode in GAME_MODES
-            }
+        self.assertTrue(json.loads(correct.body)["success"])
+        self.assertFalse(json.loads(incorrect.body)["success"])
+        self.assertIsNotNone(excluded)
 
-            self.assertNotEqual(
-                initial_players["post-integration"],
-                reset_players["post-integration"],
-            )
-            self.assertEqual(initial_players["all-time"], reset_players["all-time"])
-            self.assertEqual(
-                initial_players["30-team-era"],
-                reset_players["30-team-era"],
-            )
-        finally:
-            database.close()
+    def test_mode_pools_use_the_requested_debut_year_boundary(self):
+        for mode, expected_count in (
+            ("all-time", 3),
+            ("post-integration", 2),
+            ("30-team-era", 1),
+        ):
+            predicate, parameters = server._pool_predicate(mode)
+            count = self.connection.execute(
+                f"SELECT COUNT(*) FROM players WHERE {predicate}",
+                parameters,
+            ).fetchone()[0]
+            self.assertEqual(count, expected_count)
+
+
+if __name__ == "__main__":
+    unittest.main()

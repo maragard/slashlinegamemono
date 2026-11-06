@@ -1,26 +1,41 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-export function NameGuessInput({ value, onChange, pastGuesses, mode, disabled = false }) {
+export function NameGuessInput({
+  value,
+  onChange,
+  onPlayerSelect = () => {},
+  pastGuesses = [],
+  mode = 'all-time',
+  disabled = false,
+}) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionCache = useRef(new Map());
-  const pastGuessNames = new Set(
-    pastGuesses.map((guess) => (guess.name || guess).trim().toLowerCase())
+  const guessedIds = new Set(
+    pastGuesses.filter((guess) => guess.id != null).map((guess) => String(guess.id))
+  );
+  const guessedNames = new Set(
+    pastGuesses
+      .filter((guess) => guess.id == null)
+      .map((guess) => (typeof guess === 'string' ? guess : guess.name || '').trim().toLowerCase())
   );
   const filteredSuggestions = suggestions
-    .filter((name) => !pastGuessNames.has(name.trim().toLowerCase()))
+    .filter((player) => (
+      !guessedIds.has(String(player.id))
+      && !guessedNames.has((player.name || '').trim().toLowerCase())
+    ))
     .slice(0, 8);
 
   useEffect(() => {
-    const query = disabled ? '' : value.trim();
-    if (query.length < 3) {
-      setSuggestions([]);
-      return;
+    const query = value.trim();
+    setSuggestions([]);
+    if (query.length < 3 || disabled) {
+      return undefined;
     }
 
     let isCurrentQuery = true;
+    const cacheKey = `${mode}:${query.toLowerCase()}`;
     const delayDebounceTimer = setTimeout(() => {
-      const cacheKey = `${mode}:${query}`;
       const cachedResult = suggestionCache.current.get(cacheKey);
       const headers = cachedResult?.etag
         ? { 'If-None-Match': cachedResult.etag }
@@ -62,7 +77,7 @@ export function NameGuessInput({ value, onChange, pastGuesses, mode, disabled = 
       isCurrentQuery = false;
       clearTimeout(delayDebounceTimer);
     };
-  }, [disabled, mode, value]);
+  }, [value, mode, disabled]);
 
   return (
     <div style={{ position: 'relative', width: 'min(100%, 300px)' }}>
@@ -70,8 +85,9 @@ export function NameGuessInput({ value, onChange, pastGuesses, mode, disabled = 
         type="text"
         value={value}
         disabled={disabled}
-        onChange={(e) => {
-          onChange(e.target.value);
+        onChange={(event) => {
+          onChange(event.target.value);
+          onPlayerSelect(null);
           setShowSuggestions(true);
         }}
         onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
@@ -86,19 +102,23 @@ export function NameGuessInput({ value, onChange, pastGuesses, mode, disabled = 
         }}
       />
 
-      {showSuggestions && filteredSuggestions.length > 0 && (
+      {showSuggestions && !disabled && filteredSuggestions.length > 0 && (
         <ul style={{ position: 'absolute', background: 'white', border: '1px solid #ccc', width: '100%', zIndex: 10 }}>
-          {filteredSuggestions.map((name, index) => (
-            <ul 
-              key={`${name}-${index}`}
+          {filteredSuggestions.map((player) => (
+            <li
+              key={player.id}
               onMouseDown={() => {
-                onChange(name);
+                onChange(player.name);
+                onPlayerSelect(player.id);
                 setShowSuggestions(false);
               }}
-              style={{ padding: '8px', cursor: 'pointer', color: 'black' }}
+              style={{ padding: '8px', cursor: 'pointer', color: 'black', listStyle: 'none' }}
             >
-              {name}
-            </ul>
+              <span>{player.name}</span>
+              <small style={{ display: 'block', color: '#555' }}>
+                {player.team || 'Team not listed'} · {player.debut_year || 'unknown'} · {player.retirement_year === 'Not Found' ? 'Active' : player.retirement_year || 'unknown'}
+              </small>
+            </li>
           ))}
         </ul>
       )}

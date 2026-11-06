@@ -18,7 +18,7 @@ CSV_PATH = os.path.join(BASE_DIR, "players.csv")
 
 NAME_DETECTOR = re.compile(r"\w+(\s){1}\w+")
 
-GLOBAL_NAMES_CACHE: Dict[str, List[str]] = {}
+GLOBAL_PLAYER_CACHE: Dict[str, List[Dict[str, Any]]] = {}
 GAME_MODES = {
     "all-time": {
         "name": "All Time",
@@ -275,15 +275,29 @@ def get_revealed_player(mode="all-time"):
     return _player_info(player[0], player[1:])
 
 
-def get_eligible_names(mode="all-time"):
-    """Cache valid guessing names for one mode's player pool."""
+def get_eligible_players(mode="all-time"):
+    """Cache player metadata for suggestions in one mode's player pool."""
     predicate, parameters = _pool_predicate(mode)
     with closing(_connect_db()) as conn:
         rows = conn.execute(
-            f"SELECT name FROM players WHERE {predicate} ORDER BY name ASC",
+            f"""
+            SELECT id, name, team, debut_year, retirement_year
+            FROM players
+            WHERE {predicate}
+            ORDER BY name ASC, id ASC
+            """,
             parameters,
         ).fetchall()
-    GLOBAL_NAMES_CACHE[mode] = [row[0] for row in rows]
+    GLOBAL_PLAYER_CACHE[mode] = [
+        {
+            "id": row[0],
+            "name": row[1],
+            "team": row[2],
+            "debut_year": row[3],
+            "retirement_year": row[4],
+        }
+        for row in rows
+    ]
 
 ###############################################################################
 ##############               Application Setup                  ###############
@@ -300,7 +314,7 @@ async def lifecycle(app: FastAPI):
     init_db()
     for mode in GAME_MODES:
         select_new_player(mode)
-        get_eligible_names(mode)
+        get_eligible_players(mode)
 
     yield
 
@@ -318,7 +332,7 @@ app.add_middleware(
     allow_origins=[
         "https://slashlinegame.com", 
         "https://www.slashlinegame.com", 
-        "https://unnamedgamefront-git-preview-slashline.vercel.app"
+        "https://unnamedgamefront-git-preview-slashline.vercel.app",
         "http://localhost:3000"
     ],
     allow_credentials=True,
@@ -462,25 +476,22 @@ async def guess_player(request: Request):
     )
 
 
-@app.get("/api/suggest", response_model=List[str])
+@app.get("/api/suggest", response_model=List[Dict[str, Any]])
 def suggest_names(
     request: Request,
     q: str = Query(..., min_length=3),
     mode: str = Query("all-time"),
 ):
     """
-    Searches the server-side memory array. 
-    Only returns a set number of matches, keeping the master list hidden.
+    Searches cached player records and returns a limited set of matches.
     """
     query = q.strip().lower()
     matches = []
     _game_mode(mode)
     
-    # Filter through RAM list
-    for name in GLOBAL_NAMES_CACHE.get(mode, []):
-        if query in name.lower():
-            matches.append(name)
-        # Hard limit on returned elements protects your list
+    for player in GLOBAL_PLAYER_CACHE.get(mode, []):
+        if query in (player["name"] or "").lower():
+            matches.append(player)
         if len(matches) >= 15:  
             break
 
