@@ -1,49 +1,52 @@
 import React from 'react';
 import './PastGuesses.css';
 
-// const POSITION_ABBREVIATIONS = {
-//   catcher: 'C',
-//   'first baseman': '1B',
-//   'first basemen': '1B',
-//   'second baseman': '2B',
-//   'second basemen': '2B',
-//   'third baseman': '3B',
-//   'third basemen': '3B',
-//   shortstop: 'SS',
-//   outfielder: 'OF',
-//   outfielders: 'OF',
-//   leftfielder: 'LF',
-//   leftfielders: 'LF',
-//   centerfielder: 'CF',
-//   centerfielders: 'CF',
-//   rightfielder: 'RF',
-//   rightfielders: 'RF',
-//   'designated hitter': 'DH',
-//   'designated hitters': 'DH',
-// };
+const POSITION_ABBREVIATIONS = {
+  catcher: 'C',
+  'first baseman': '1B',
+  'first basemen': '1B',
+  'second baseman': '2B',
+  'second basemen': '2B',
+  'third baseman': '3B',
+  'third basemen': '3B',
+  shortstop: 'SS',
+  outfielder: 'OF',
+  outfielders: 'OF',
+  leftfielder: 'LF',
+  leftfielders: 'LF',
+  centerfielder: 'CF',
+  centerfielders: 'CF',
+  rightfielder: 'RF',
+  rightfielders: 'RF',
+  'designated hitter': 'DH',
+  'designated hitters': 'DH',
+};
 
-// function abbreviatePositions(positions) {
-//   return positions
-//     .split(/,|\s+and\s+/i)
-//     .map((position) => {
-//       const trimmedPosition = position.trim();
-//       return POSITION_ABBREVIATIONS[trimmedPosition.toLowerCase()] || trimmedPosition;
-//     })
-//     .filter((position) => position && position.toLowerCase() !== 'pinch hitter')
-//     .join(', ');
-// }
+function abbreviatePositions(positions) {
+  return positions
+    .split(/,|\s+and\s+/i)
+    .map((position) => {
+      const trimmedPosition = position.trim();
+      return POSITION_ABBREVIATIONS[trimmedPosition.toLowerCase()] || trimmedPosition;
+    })
+    .filter((position) => position && position.toLowerCase() !== 'pinch hitter')
+    .join(', ');
+}
 
-// function formatTeams(teams) {
-//   return teams
-//     .split(',')
-//     .map((team) => team.trim())
-//     .filter((team) => team && team.toUpperCase() !== '2TM')
-//     .join(',');
-// }
+function formatTeams(teams) {
+  return teams
+    .split(',')
+    .map((team) => team.trim())
+    .filter((team) => team && team.toUpperCase() !== '2TM')
+    .join(',');
+}
 
 function hintClass(hint) {
   if (hint === 'correct') {
     return 'past-guesses__cell--hint-correct';
+  }
+  if (hint === 'close') {
+    return 'past-guesses__cell--hint-close';
   }
   if (hint === 'partial' || hint === 'decade') {
     return 'past-guesses__cell--hint-partial';
@@ -54,6 +57,9 @@ function hintClass(hint) {
 function hintStyle(hint) {
   if (hint === 'correct') {
     return { backgroundColor: '#63d47b', color: '#111820' };
+  }
+  if (hint === 'close') {
+    return { backgroundColor: '#f4d35e', color: '#111820' };
   }
   if (hint === 'partial' || hint === 'decade') {
     return { backgroundColor: '#f4a340', color: '#111820' };
@@ -70,9 +76,6 @@ function PlayerTableHeader() {
         <th scope="col">Team(s)</th>
         <th scope="col">Debut</th>
         <th scope="col">Retired</th>
-        <th scope="col">AVG</th>
-        <th scope="col">OBP</th>
-        <th scope="col">SLG</th>
       </tr>
     </thead>
   );
@@ -82,20 +85,17 @@ function PlayerTableRow({ player }) {
   return (
     <tr className={`past-guesses__player-row${player.isCorrect ? ' past-guesses__player-row--correct' : ''}`}>
       <th scope="row">{player.name || ''}</th>
-      <td className={hintClass(player.hints?.position)} style={hintStyle(player.hints?.position)}>{player.position}</td>
-      <td className={hintClass(player.hints?.team)} style={hintStyle(player.hints?.team)}>{player.team}</td>
+      <td className={hintClass(player.hints?.position)} style={hintStyle(player.hints?.position)}>{player.position ? abbreviatePositions(player.position) : ''}</td>
+      <td className={hintClass(player.hints?.team)} style={hintStyle(player.hints?.team)}>{player.team ? formatTeams(player.team) : ''}</td>
       <td className={hintClass(player.hints?.debut_year)} style={hintStyle(player.hints?.debut_year)}>{player.debut_year || ''}</td>
-      <td className={hintClass(player.hints?.retirement_year)} style={hintStyle(player.hints?.retirement_year)}>{player.retirement_year || 'Active'}</td>
-      <td>{player.avg || ''}</td>
-      <td>{player.obp || ''}</td>
-      <td>{player.slg || ''}</td>
+      <td className={hintClass(player.hints?.retirement_year)} style={hintStyle(player.hints?.retirement_year)}>{player.retirement_year || ''}</td>
     </tr>
   );
 }
 
 export function RevealedPlayer({ player }) {
   return (
-    <div className="past-guesses__table-scroll revealed-player">
+    <div className="past-guesses__table-container revealed-player">
       <table className="past-guesses__table">
         <caption className="visually-hidden">Revealed player details</caption>
         <PlayerTableHeader />
@@ -107,7 +107,12 @@ export function RevealedPlayer({ player }) {
   );
 }
 
-export function PastGuesses({ guesses, title = 'Past guesses', minimumRows = 9 }) {
+export function PastGuesses({
+  guesses,
+  title = 'Past guesses',
+  minimumRows = 9,
+  guessLimit = 9,
+}) {
   const rows = Array.from(
     { length: Math.max(minimumRows, guesses.length) },
     (_, index) => guesses[index]
@@ -118,9 +123,13 @@ export function PastGuesses({ guesses, title = 'Past guesses', minimumRows = 9 }
     <section className="past-guesses" aria-labelledby={headingId}>
       <div className="past-guesses__heading">
         <h3 id={headingId}>{title}</h3>
-        <span>{guesses.length} {guesses.length === 1 ? 'guess' : 'guesses'}</span>
+        <span>
+          {guessLimit === null
+            ? `${guesses.length} ${guesses.length === 1 ? 'guess' : 'guesses'}`
+            : `${guesses.length}/${guessLimit} guesses`}
+        </span>
       </div>
-      <div className="past-guesses__table-scroll">
+      <div className="past-guesses__table-container">
         <table className="past-guesses__table">
           <caption className="visually-hidden">Player details for each past guess</caption>
           <PlayerTableHeader />
@@ -131,7 +140,7 @@ export function PastGuesses({ guesses, title = 'Past guesses', minimumRows = 9 }
                 : (
                   <tr key={`empty-${index}`} className="past-guesses__empty-row">
                     <th scope="row" />
-                    <td /><td /><td /><td /><td /><td /><td />
+                    <td /><td /><td /><td />
                   </tr>
                 )
             ))}

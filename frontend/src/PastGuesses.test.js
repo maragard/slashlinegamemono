@@ -5,14 +5,30 @@ import { PastGuesses } from './PastGuesses';
 test('prepopulates nine blank past-guess rows', () => {
   render(<PastGuesses guesses={[]} />);
 
-  expect(screen.getByText('0 guesses')).toBeInTheDocument();
+  expect(screen.getByText('0/9 guesses')).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Past guesses' })).toBeInTheDocument();
   expect(screen.getAllByRole('row')).toHaveLength(10);
   const firstBlankRow = screen.getAllByRole('row')[1];
-  expect(within(firstBlankRow).getAllByRole('cell')).toHaveLength(7);
+  expect(within(firstBlankRow).getAllByRole('cell')).toHaveLength(4);
   within(firstBlankRow).getAllByRole('cell').forEach((cell) => {
     expect(cell).toBeEmptyDOMElement();
   });
+});
+
+test('tracks guesses against the nine-guess limit and leaves Free Play uncapped', () => {
+  const { rerender } = render(<PastGuesses guesses={[{ name: 'Henry Aaron' }]} />);
+
+  expect(screen.getByText('1/9 guesses')).toBeInTheDocument();
+
+  rerender(
+    <PastGuesses
+      guesses={[{ name: 'Henry Aaron' }]}
+      title="Free Play"
+      minimumRows={0}
+      guessLimit={null}
+    />
+  );
+  expect(screen.getByText('1 guess')).toBeInTheDocument();
 });
 
 test('shows past guesses with the available player details', () => {
@@ -52,8 +68,30 @@ test('shows past guesses with the available player details', () => {
   });
   expect(within(row).getByText('1954').closest('td')).toHaveClass('past-guesses__cell--hint-partial');
   expect(within(row).getByText('1976').closest('td')).toHaveClass('past-guesses__cell--hint-correct');
-  expect(within(row).getByText('0.555')).toBeInTheDocument();
-  expect(screen.queryByRole('columnheader', { name: 'PA' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('columnheader', { name: 'AVG' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('columnheader', { name: 'OBP' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('columnheader', { name: 'SLG' })).not.toBeInTheDocument();
+  expect(within(row).queryByText('0.305')).not.toBeInTheDocument();
+  expect(within(row).queryByText('0.374')).not.toBeInTheDocument();
+  expect(within(row).queryByText('0.555')).not.toBeInTheDocument();
+});
+
+test('shows near year matches in yellow', () => {
+  render(
+    <PastGuesses
+      guesses={[{
+        name: 'Near Match',
+        debut_year: '2001',
+        hints: { debut_year: 'close' },
+      }]}
+    />
+  );
+
+  expect(screen.getByText('2001').closest('td')).toHaveClass('past-guesses__cell--hint-close');
+  expect(screen.getByText('2001').closest('td')).toHaveStyle({
+    backgroundColor: 'rgb(244, 211, 94)',
+    color: 'rgb(17, 24, 32)',
+  });
 });
 
 test('abbreviates all supported positions while preserving other position labels', () => {

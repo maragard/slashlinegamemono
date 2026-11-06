@@ -24,17 +24,17 @@ GAME_MODES = {
     "all-time": {
         "name": "All Time",
         "years": "1871–Present (all players)",
-        "minimum_debut_year": None,
+        "era_start_year": None,
     },
     "post-integration": {
         "name": "Post-Integration",
         "years": "1950–Present",
-        "minimum_debut_year": 1950,
+        "era_start_year": 1950,
     },
     "30-team-era": {
         "name": "30 Team Era",
         "years": "1998–Present",
-        "minimum_debut_year": 1998,
+        "era_start_year": 1998,
     },
 }
 
@@ -54,10 +54,19 @@ def _game_mode(mode):
 
 
 def _pool_predicate(mode):
-    minimum_year = _game_mode(mode)["minimum_debut_year"]
-    if minimum_year is None:
+    era_start_year = _game_mode(mode)["era_start_year"]
+    if era_start_year is None:
         return "1 = 1", ()
-    return "CAST(debut_year AS INTEGER) >= ?", (minimum_year,)
+    return (
+        """
+        CAST(debut_year AS INTEGER) <= CAST(strftime('%Y', 'now') AS INTEGER)
+        AND (
+            CAST(retirement_year AS INTEGER) >= ?
+            OR retirement_year = 'Not Found'
+        )
+        """,
+        (era_start_year,),
+    )
 
 
 def _player_hints(player, target):
@@ -76,9 +85,12 @@ def _player_hints(player, target):
             return "correct"
 
         try:
+            year_difference = abs(int(guess_year) - int(target_year))
+            if year_difference <= 3:
+                return "close"
             if int(guess_year) // 10 == int(target_year) // 10:
                 return "decade"
-        except ValueError:
+        except (TypeError, ValueError):
             return None
 
         return None

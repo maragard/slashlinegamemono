@@ -93,5 +93,6 @@ describe('Game player guesses', () => {
     });
 
     expect(JSON.parse(guessRequest.body)).toEqual({ name: 'Sam Same', mode: 'all-time' });
+    expect(document.activeElement).toBe(screen.getByPlaceholderText('Guess a player...'));
   });
 });
