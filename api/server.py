@@ -20,7 +20,24 @@ NAME_DETECTOR = re.compile(r"\w+(\s){1}\w+")
 
 chosen = ""
 statline = ""
-GLOBAL_PLAYER_CACHE: List[Dict[str, Any]] = []
+GLOBAL_NAMES_CACHE: List[Dict[str, Any]] = []
+GAME_MODES = {
+    "all-time": {
+        "name": "All Time",
+        "years": "1871–Present (all players)",
+        "minimum_debut_year": None,
+    },
+    "post-integration": {
+        "name": "Post-Integration",
+        "years": "1950–Present",
+        "minimum_debut_year": 1950,
+    },
+    "30-team-era": {
+        "name": "30 Team Era",
+        "years": "1998–Present",
+        "minimum_debut_year": 1998,
+    },
+}
 
 ###############################################################################
 ##############                 Helper functions                 ###############
@@ -30,6 +47,71 @@ GLOBAL_PLAYER_CACHE: List[Dict[str, Any]] = []
 def _connect_db():
     return sqlite3.connect(DB_URI, uri=True)
 
+def _game_mode(mode):
+    if mode not in GAME_MODES:
+        raise HTTPException(status_code=422, detail="Invalid game mode.")
+    return GAME_MODES[mode]
+
+def _pool_predicate(mode):
+    minimum_year = _game_mode(mode)["minimum_debut_year"]
+    if minimum_year is None:
+        return "1 = 1", ()
+    return "CAST(debut_year AS INTEGER) >= ?", (minimum_year,)
+
+def _player_hints(player, target):
+    def split_values(value):
+        return {
+            part.strip().casefold()
+            for part in re.split(r",|\s+and\s+", value or "", flags=re.IGNORECASE)
+            if part.strip()
+        }
+
+    def compare_year(guess_year, target_year):
+        if not guess_year or not target_year:
+            return None
+
+        if guess_year == target_year:
+            return "correct"
+
+        try:
+            if int(guess_year) // 10 == int(target_year) // 10:
+                return "decade"
+        except ValueError:
+            return None
+
+        return None
+
+    def compare_values(guess_value, target_value):
+        guess_values = split_values(guess_value)
+        target_values = split_values(target_value)
+        if not guess_values or not target_values:
+            return None
+        if guess_values == target_values:
+            return "correct"
+        if guess_values & target_values:
+            return "partial"
+        return None
+
+    return {
+        "debut_year": compare_year(player[3], target[3]),
+        "retirement_year": compare_year(player[4], target[4]),
+        "position": compare_values(player[2], target[2]),
+        "team": compare_values(player[1], target[1]),
+    }
+
+def _player_info(player_id, player):
+    return {
+        "id": player_id,
+        "name": player[0],
+        "team": player[1],
+        "position": player[2],
+        "debut_year": player[3],
+        "retirement_year": player[4],
+        "plate_apps": player[5],
+        "avg": player[6],
+        "obp": player[7],
+        "slg": player[8],
+    }
 
 ###############################################################################
 ##############                Database functions                ###############
@@ -63,9 +145,10 @@ def init_db(csv_path=CSV_PATH):
 
         curr.execute(
             """
-            CREATE TABLE IF NOT EXISTS todays_player (
-                name TEXT PRIMARY KEY,
+            CREATE TABLE IF NOT EXISTS todays_players (
+                mode TEXT PRIMARY KEY,
                 player_id INTEGER,
+                name TEXT,
                 team TEXT,
                 position TEXT,
                 debut_year TEXT,
@@ -76,11 +159,6 @@ def init_db(csv_path=CSV_PATH):
             )
             """
         )
-
-        curr.execute("PRAGMA table_info(todays_player)")
-        todays_player_columns = {row[1] for row in curr.fetchall()}
-        if "player_id" not in todays_player_columns:
-            curr.execute("ALTER TABLE todays_player ADD COLUMN player_id INTEGER")
 
         curr.execute("SELECT COUNT(1) FROM players")
         count = curr.fetchone()[0]
@@ -126,95 +204,83 @@ def init_db(csv_path=CSV_PATH):
     return
 
 
-def select_new_player():
-    """
-    Chooses a player at random from the full list
-    and stores them in todays_player. 
-
-    Returns None
-    """
+def select_new_player(mode="all-time"):
+    """Choose a random player from the selected mode's pool."""
+    predicate, parameters = _pool_predicate(mode)
     with closing(_connect_db()) as conn:
         curr = conn.cursor()
 
-        # Find new player
-        player = curr.execute (
-            """
+        player = curr.execute(
+            f"""
             SELECT id, name, team, position, debut_year, retirement_year, avg, obp, slg
             FROM players
+            WHERE ({predicate})
+              AND id NOT IN (SELECT player_id FROM todays_players)
             ORDER BY RANDOM()
             LIMIT 1
-            """
+            """,
+            parameters,
         ).fetchone()
 
-        # Reset todays_player
-        curr.execute ("DELETE FROM todays_player")
-        # Set new value for todays_player
-        print(player)
-        curr.execute (
-                """
-                INSERT INTO todays_player
-                (name, player_id, team, position, debut_year, retirement_year, avg, obp, slg)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (player[1], player[0], *player[2:]),
-            )
+        if player is None:
+            raise ValueError(f"No players are available for the {GAME_MODES[mode]['name']} mode.")
 
-        conn.commit()
-    return
-
-
-def load_current_player():
-    """
-    Initialize global variables by fetching todays_players
-
-    Returns None
-    """
-    global chosen, statline
-
-    with closing(_connect_db()) as conn:
-        curr = conn.cursor()
-
-        target = curr.execute (
-            """
-            SELECT player_id, name, team, position, debut_year, retirement_year, avg, obp, slg
-            FROM todays_player
-            """
-        ).fetchone()
-        
-    print(target)
-    chosen = target
-    statline = "/".join(target[-3:]).strip("'")
-    return
-
-
-def get_eligible_players():
-    """
-    Caches player records to power autocomplete suggestions.
-
-    Returns None
-    """
-    global GLOBAL_PLAYER_CACHE
-    with closing(_connect_db()) as conn:
-        curr = conn.cursor()
         curr.execute(
             """
-            SELECT id, name, team, debut_year, retirement_year
-            FROM players
-            ORDER BY name ASC, id ASC
-            """
+            INSERT OR REPLACE INTO todays_players
+            (mode, player_id, name, team, position, debut_year, retirement_year, avg, obp, slg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (mode, *player),
         )
-        
-        GLOBAL_PLAYER_CACHE = [
-            {
-                "id": row[0],
-                "name": row[1],
-                "team": row[2],
-                "debut_year": row[3],
-                "retirement_year": row[4],
-            }
-            for row in curr.fetchall()
-        ]
-        print(f"Loaded {len(GLOBAL_PLAYER_CACHE)} players safely into backend memory.")
+
+        conn.commit()
+
+
+def load_current_player(mode="all-time"):
+    with closing(_connect_db()) as conn:
+        target = conn.execute(
+            """
+            SELECT player_id, name, team, position, debut_year, retirement_year, avg, obp, slg
+            FROM todays_players
+            WHERE mode = ?
+            """,
+            (mode,),
+        ).fetchone()
+    return target
+
+
+def get_revealed_player(mode="all-time"):
+    target = load_current_player(mode)
+    if target is None:
+        raise HTTPException(status_code=404, detail="No player is selected for this game mode.")
+
+    predicate, parameters = _pool_predicate(mode)
+    with closing(_connect_db()) as conn:
+        player = conn.execute(
+            f"""
+            SELECT id, name, team, position, debut_year, retirement_year,
+                   plate_apps, avg, obp, slg
+            FROM players
+            WHERE ({predicate}) AND id = ?
+            """,
+            (*parameters, target[0]),
+        ).fetchone()
+
+    if player is None:
+        raise HTTPException(status_code=404, detail="The selected player was not found.")
+    return _player_info(player[0], player[1:])
+
+
+def get_eligible_names(mode="all-time"):
+    """Cache valid guessing names for one mode's player pool."""
+    predicate, parameters = _pool_predicate(mode)
+    with closing(_connect_db()) as conn:
+        rows = conn.execute(
+            f"SELECT name FROM players WHERE {predicate} ORDER BY name ASC",
+            parameters,
+        ).fetchall()
+    GLOBAL_NAMES_CACHE[mode] = [row[0] for row in rows]
 
 ###############################################################################
 ##############               Application Setup                  ###############
@@ -229,9 +295,9 @@ async def lifecycle(app: FastAPI):
     # on_event("startup"): setup backend
     database = _connect_db()
     init_db()
-    select_new_player()
-    load_current_player()
-    get_eligible_players()
+    for mode in GAME_MODES:
+        select_new_player(mode)
+        get_eligible_names(mode)
 
     yield
 
@@ -331,16 +397,17 @@ async def guess_player(request: Request):
 
 
 @app.get("/api/suggest", response_model=List[Dict[str, Any]])
-def suggest_names(request: Request, q: str = Query(..., min_length=3)):
+def suggest_names(request: Request, q: str = Query(..., min_length=3), mode: str = Query("all-time")):
     """
     Searches cached player records and returns a limited set of matches.
     """
     query = q.strip().lower()
     matches = []
+    _game_mode(mode)
     
-    for player in GLOBAL_PLAYER_CACHE:
-        if query in (player["name"] or "").lower():
-            matches.append(player)
+    for name in GLOBAL_NAMES_CACHE.get(mode, []):
+        if query in name.lower():
+            matches.append(name)
         if len(matches) >= 15:
             break
 
