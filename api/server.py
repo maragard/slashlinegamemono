@@ -200,11 +200,45 @@ def _player_hints(player, target):
             return "partial"
         return None
 
+    def compare_teams(guess_teams, target_teams):
+        def actual_teams(value):
+            return {
+                team for team in split_values(value)
+                if not re.fullmatch(r"\d+tm", team)
+            }
+
+        guess_values = actual_teams(guess_teams)
+        target_values = actual_teams(target_teams)
+        if not guess_values or not target_values:
+            return None
+        if guess_values == target_values:
+            return "correct"
+        if guess_values & target_values:
+            return "partial"
+        return None
+
+    def compare_positions(guess_positions, target_positions):
+        def display_positions(value):
+            return {
+                position for position in split_values(value)
+                if position != "pinch hitter"
+            }
+
+        guess_values = display_positions(guess_positions)
+        target_values = display_positions(target_positions)
+        if not guess_values or not target_values:
+            return None
+        if guess_values == target_values:
+            return "correct"
+        if guess_values & target_values:
+            return "partial"
+        return None
+
     return {
         "debut_year": compare_year(player[3], target[3]),
         "retirement_year": compare_year(player[4], target[4]),
-        "position": compare_values(player[2], target[2]),
-        "team": compare_values(player[1], target[1]),
+        "position": compare_positions(player[2], target[2]),
+        "team": compare_teams(player[1], target[1]),
     }
 
 

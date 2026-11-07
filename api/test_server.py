@@ -81,6 +81,26 @@ class PlayerSuggestionTests(unittest.TestCase):
             target,
         )["debut_year"], "correct")
 
+    def test_team_overlap_ignores_multi_team_summary_markers(self):
+        target = ("Target", "NYY,2TM", "Shortstop", "1998", "2005")
+        same_team_set = ("Guess", "2TM,NYY", "Outfielder", "2001", "2008")
+        shared_summary_only = ("Guess", "2TM,BOS", "Outfielder", "2001", "2008")
+
+        self.assertEqual(server._player_hints(same_team_set, target)["team"], "correct")
+        self.assertIsNone(server._player_hints(shared_summary_only, target)["team"])
+
+    def test_position_hint_ignores_hidden_pinch_hitter_label(self):
+        target = ("Russ Nixon", "MIN,2TM,BOS,CLE", "Catcher and Pinch Hitter", "1957", "1968")
+        catcher_guesses = [
+            ("Jim Pagliaroni", "SEP,OAK,BOS,PIT,2TM", "Catcher", "1955", "1969"),
+            ("Sammy White", "PHI,BOS,MLN", "Catcher", "1951", "1962"),
+            ("Tom Haller", "SFG,DET,LAD", "Catcher", "1961", "1972"),
+        ]
+
+        for guess in catcher_guesses:
+            with self.subTest(player=guess[0]):
+                self.assertEqual(server._player_hints(guess, target)["position"], "correct")
+
     def test_difficulty_rating_is_returned_for_the_selected_target(self):
         response = asyncio.run(server.starting_info("all-time"))
         start_data = json.loads(response.body)
