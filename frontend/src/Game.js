@@ -24,6 +24,7 @@ export default function Game() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [startHint, setStartHint] = useState('Loading hint...');
+  const [difficultyRatings, setDifficultyRatings] = useState({});
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [duplicateCandidates, setDuplicateCandidates] = useState([]);
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
@@ -83,6 +84,10 @@ export default function Game() {
         const data = await response.json();
         if (isMounted) {
           setStartHint(data?.hint || 'No hint available.');
+          setDifficultyRatings((ratings) => ({
+            ...ratings,
+            [selectedMode]: data?.difficulty_rating,
+          }));
         }
       } catch (err) {
         if (isMounted) {
@@ -283,13 +288,23 @@ export default function Game() {
           <li>Guess a player based on the given slashline.</li>
           <li>Only players who have more than 1000 plate appearances are eligible.</li>
           <li>You have nine guesses per mode. After that, start Free Play to make unlimited additional guesses on a separate board.</li>
+          <li>Difficulty ranges from 1 (easiest) to 10 (hardest) and compares the player with others in the selected era. More recent careers, more plate appearances per active season, and stronger batting stats generally mean an easier rating.</li>
           <li>Yellow means a debut or retirement year is within 3 years of the target year.</li>
           <li>Orange means a year is in the same decade, but not an exact year, or some positions or teams overlap.</li>
           <li>Green means the year matches exactly, or the full position or team list matches.</li>
         </ol>
       </PopupFrame>
       <main className="game-panel">
-        <h1 style={{ marginBottom: '12px', fontSize: '28px' }}>{startHint}</h1>
+        <div className="game-clue-row">
+          <h1 style={{ margin: '0 0 12px', fontSize: '28px' }}>{startHint}</h1>
+          <div className="game-difficulty-wrap">
+            {difficultyRatings[selectedMode] != null && (
+              <div className="game-difficulty" role="status" aria-label="Player difficulty">
+                Difficulty: {difficultyRatings[selectedMode]}/10
+              </div>
+            )}
+          </div>
+        </div>
         <h2 style={{ marginBottom: '20px' }}>Who's That Player?</h2>
 
         {hasWon ? (

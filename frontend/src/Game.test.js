@@ -17,7 +17,7 @@ describe('Game player guesses', () => {
       if (url.startsWith('/api/start')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ hint: 'slashline' }),
+          json: async () => ({ hint: 'slashline', difficulty_rating: 6 }),
         });
       }
 
@@ -82,6 +82,13 @@ describe('Game player guesses', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+    expect(await screen.findByText('Difficulty: 6/10')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'slashline' }).parentElement).toBe(
+      screen.getByText('Difficulty: 6/10').parentElement.parentElement
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Rules' }));
+    expect(screen.getByText(/compares the player with others in the selected era/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '×' }));
 
     fireEvent.change(screen.getByPlaceholderText('Guess a player...'), {
       target: { value: 'Sam Same' },
@@ -93,6 +100,7 @@ describe('Game player guesses', () => {
     });
 
     expect(JSON.parse(guessRequest.body)).toEqual({ name: 'Sam Same', mode: 'all-time' });
+    expect(screen.getByText('Difficulty: 6/10')).toBeInTheDocument();
     expect(document.activeElement).toBe(screen.getByPlaceholderText('Guess a player...'));
   });
 });

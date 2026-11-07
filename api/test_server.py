@@ -44,7 +44,7 @@ class PlayerSuggestionTests(unittest.TestCase):
             (mode, player_id, name, team, position, debut_year, retirement_year, avg, obp, slg)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            ("all-time", 101, "Sam Same", "TEAM A", "Outfielder", "1948", "1970", ".300", ".400", ".500"),
+            ("all-time", 101, "Sam Same", "TEAM A", "Outfielder", "1948", "1970", "0.300", "0.400", "0.500"),
         )
         self.connection.commit()
         server.get_eligible_names()
@@ -80,6 +80,35 @@ class PlayerSuggestionTests(unittest.TestCase):
             ("Guess", "TEAM B", "Outfielder", "1998", "2005"),
             target,
         )["debut_year"], "correct")
+
+    def test_difficulty_rating_is_returned_for_the_selected_target(self):
+        response = asyncio.run(server.starting_info("all-time"))
+        start_data = json.loads(response.body)
+        expected_rating = server._difficulty_ratings("all-time")[101]
+
+        self.assertEqual(start_data["hint"], ".300/.400/.500")
+        self.assertEqual(start_data["difficulty_rating"], expected_rating)
+        self.assertGreaterEqual(start_data["difficulty_rating"], 1)
+        self.assertLessEqual(start_data["difficulty_rating"], 10)
+
+    def test_recent_player_with_strong_stats_is_not_penalized_for_shorter_career(self):
+        self.connection.executemany(
+            """
+            INSERT INTO players
+            (id, name, team, position, debut_year, retirement_year,
+             plate_apps, avg, obp, slg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (106, "Strong Recent Player", "TEAM F", "Outfielder", "2022", "Not Found", "5000", ".310", ".400", ".600"),
+                (107, "Old Low-PA Player", "TEAM G", "Catcher", "1880", "1885", "500", ".150", ".200", ".250"),
+            ],
+        )
+        self.connection.commit()
+
+        ratings = server._difficulty_ratings("all-time", current_year=2026)
+
+        self.assertLess(ratings[106], ratings[107])
 
     def test_suggestions_return_distinct_player_records_within_mode(self):
         response = server.suggest_names(
