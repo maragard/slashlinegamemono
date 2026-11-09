@@ -18,9 +18,7 @@ CSV_PATH = os.path.join(BASE_DIR, "players.csv")
 
 NAME_DETECTOR = re.compile(r"\w+(\s){1}\w+")
 
-chosen = ""
-statline = ""
-GLOBAL_NAMES_CACHE: List[Dict[str, Any]] = []
+GLOBAL_NAMES_CACHE: Dict[str, List[str]] = {}
 GAME_MODES = {
     "all-time": {
         "name": "All Time",
@@ -47,16 +45,19 @@ GAME_MODES = {
 def _connect_db():
     return sqlite3.connect(DB_URI, uri=True)
 
+
 def _game_mode(mode):
     if mode not in GAME_MODES:
         raise HTTPException(status_code=422, detail="Invalid game mode.")
     return GAME_MODES[mode]
+
 
 def _pool_predicate(mode):
     minimum_year = _game_mode(mode)["minimum_debut_year"]
     if minimum_year is None:
         return "1 = 1", ()
     return "CAST(debut_year AS INTEGER) >= ?", (minimum_year,)
+
 
 def _player_hints(player, target):
     def split_values(value):
@@ -99,6 +100,7 @@ def _player_hints(player, target):
         "team": compare_values(player[1], target[1]),
     }
 
+
 def _player_info(player_id, player):
     return {
         "id": player_id,
@@ -112,6 +114,7 @@ def _player_info(player_id, player):
         "obp": player[7],
         "slg": player[8],
     }
+
 
 ###############################################################################
 ##############                Database functions                ###############
@@ -315,7 +318,7 @@ app.add_middleware(
     allow_origins=[
         "https://slashlinegame.com", 
         "https://www.slashlinegame.com", 
-        "https://unnamedgamefront-git-preview-slashline.vercel.app"
+        "https://unnamedgamefront-git-preview-slashline.vercel.app",
         "http://localhost:3000"
     ],
     allow_credentials=True,
@@ -334,15 +337,15 @@ async def health_check():
 
 
 @app.get("/api/reset")
-def reset_game():
+def reset_game(mode: str = Query("all-time")):
     """
     Choose a new player from the db, and set up the global vars
     
     Returns None
     """
+    _game_mode(mode)
     try:
-        select_new_player()
-        load_current_player()
+        select_new_player(mode)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except sqlite3.Error as e:
@@ -350,17 +353,32 @@ def reset_game():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unknown error: {str(e)}")
     else:   
-        return JSONResponse(content={"msg": "Game reset successfully"})
+        return JSONResponse(content={"msg": "Game reset successfully", "mode": mode})
 
 
-@app.get("/api/start", response_model=Dict[str, str])
-async def starting_info():
+@app.get("/api/start")
+async def starting_info(mode: str = Query("all-time")):
     """
     Send the starting guess for the game
 
     Return JSON
     """
-    return JSONResponse(content={"hint": statline})
+    game_mode = _game_mode(mode)
+    target = load_current_player(mode)
+    if target is None:
+        raise HTTPException(status_code=404, detail="No player is selected for this game mode.")
+    return JSONResponse(content={
+        "hint": "/".join(target[-3:]).strip("'"),
+        "mode": mode,
+        "mode_name": game_mode["name"],
+        "years": game_mode["years"],
+    })
+
+
+@app.get("/api/reveal-player")
+async def reveal_player(mode: str = Query("all-time")):
+    _game_mode(mode)
+    return JSONResponse(content={"player": get_revealed_player(mode)})
 
 
 @app.post("/api/guess-player")
@@ -372,43 +390,98 @@ async def guess_player(request: Request):
 
     unique_id = data.get("id")
     guess_name = data.get("name")
+    mode = data.get("mode", "all-time")
+    predicate, parameters = _pool_predicate(mode)
 
     if unique_id is None and not guess_name:
         return PlainTextResponse("Missing necessary fields", status_code=400)
 
-    if unique_id is not None:
+    if guess_name:
         with closing(_connect_db()) as conn:
-            player = conn.execute(
-                "SELECT id FROM players WHERE id = ?",
-                (unique_id,),
+            players = conn.execute(
+                f"""
+                SELECT id, name, team, position, debut_year, retirement_year,
+                       plate_apps, avg, obp, slg
+                FROM players
+                WHERE ({predicate}) AND name = ? COLLATE NOCASE
+                """,
+                (*parameters, guess_name.strip()),
+            ).fetchall()
+
+        if not players:
+            raise HTTPException(
+                status_code=404,
+                detail="Player not found in this game mode. Please choose a player from the suggestions.",
+            )
+
+        if len(players) > 1:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": "Multiple players have that name. Choose the correct player.",
+                    "candidates": [
+                        _player_info(record[0], record[1:])
+                        for record in players
+                    ],
+                },
+                headers={"X-Player-Candidates": "available"},
+            )
+        unique_id, *player = players[0]
+    elif unique_id is not None:
+        with closing(_connect_db()) as conn:
+            record = conn.execute(
+                f"""
+                SELECT id, name, team, position, debut_year, retirement_year,
+                       plate_apps, avg, obp, slg
+                FROM players
+                WHERE ({predicate}) AND id = ?
+                """,
+                (*parameters, unique_id),
             ).fetchone()
 
-        success = bool(player and player[0] == chosen[0])
-        return JSONResponse({
+        if not record:
+            raise HTTPException(status_code=404, detail="Player not found in this game mode.")
+        unique_id, *player = record
+    else:
+        raise HTTPException(status_code=400, detail="Missing player name or ID.")
+
+    target = load_current_player(mode)
+    if target is None:
+        raise HTTPException(status_code=404, detail="No player is selected for this game mode.")
+    player_info = _player_info(unique_id, player)
+    hints = _player_hints(player, target[1:])
+    success = int(unique_id) == int(target[0])
+
+    return JSONResponse(
+        content={
             "success": success,
             "msg": "You did it!" if success else "Try again",
-        })
-
-    # If id is sent, this code is unreachable
-    if guess_name and guess_name == chosen[1].strip("'"):
-        return JSONResponse(content={"success": True, "msg": "You did it!"})
-
-    return {"success": False, "msg": "Try again"}
+            "player": player_info,
+            "hints": hints,
+        }
+    )
 
 
-@app.get("/api/suggest", response_model=List[Dict[str, Any]])
-def suggest_names(request: Request, q: str = Query(..., min_length=3), mode: str = Query("all-time")):
+@app.get("/api/suggest", response_model=List[str])
+def suggest_names(
+    request: Request,
+    q: str = Query(..., min_length=3),
+    mode: str = Query("all-time"),
+):
     """
-    Searches cached player records and returns a limited set of matches.
+    Searches the server-side memory array. 
+    Only returns a set number of matches, keeping the master list hidden.
     """
     query = q.strip().lower()
     matches = []
     _game_mode(mode)
     
+    # Filter through RAM list
     for name in GLOBAL_NAMES_CACHE.get(mode, []):
         if query in name.lower():
             matches.append(name)
-        if len(matches) >= 15:
+        # Hard limit on returned elements protects your list
+        if len(matches) >= 15:  
             break
 
     # 1. Serialize the content to a stable JSON string to generate a hash
