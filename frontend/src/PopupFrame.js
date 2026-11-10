@@ -49,7 +49,7 @@ const styles = {
   appContainer: { fontFamily: 'sans-serif', textAlign: 'center', marginTop: '50px' },
   openButton: { padding: '10px 20px', fontSize: '16px', cursor: 'pointer', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '4px' },
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  popupBox: { position: 'relative', backgroundColor: '#fff', padding: '30px', borderRadius: '8px', maxWidth: '500px', width: '90%', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)', textAlign: 'center', color: 'black' },
-  closeButton: { position: 'absolute', top: '10px', right: '15px', background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#333' },
+  popupBox: { position: 'relative', backgroundColor: '#1d2732', border: '1px solid #485563', padding: '30px', borderRadius: '8px', maxWidth: '500px', width: '90%', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)', textAlign: 'center', color: '#fff' },
+  closeButton: { position: 'absolute', top: '10px', right: '15px', background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#fff' },
   content: { marginTop: '10px' }
 };
