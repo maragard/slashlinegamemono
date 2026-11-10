@@ -280,10 +280,10 @@ def get_eligible_names(mode="all-time"):
     predicate, parameters = _pool_predicate(mode)
     with closing(_connect_db()) as conn:
         rows = conn.execute(
-            f"SELECT name FROM players WHERE {predicate} ORDER BY name ASC",
+            f"SELECT id, name FROM players WHERE {predicate} ORDER BY name ASC, id ASC",
             parameters,
         ).fetchall()
-    GLOBAL_NAMES_CACHE[mode] = [row[0] for row in rows]
+    GLOBAL_NAMES_CACHE[mode] = [(row[0], row[1]) for row in rows]
 
 ###############################################################################
 ##############               Application Setup                  ###############
@@ -462,7 +462,7 @@ async def guess_player(request: Request):
     )
 
 
-@app.get("/api/suggest", response_model=List[str])
+@app.get("/api/suggest", response_model=List[Dict[str, Any]])
 def suggest_names(
     request: Request,
     q: str = Query(..., min_length=3),
@@ -478,8 +478,8 @@ def suggest_names(
     
     # Filter through RAM list
     for name in GLOBAL_NAMES_CACHE.get(mode, []):
-        if query in name.lower():
-            matches.append(name)
+        if query in name[1].lower():
+            matches.append({"id": name[0], "name": name[1]})
         # Hard limit on returned elements protects your list
         if len(matches) >= 15:  
             break
