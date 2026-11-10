@@ -5,9 +5,6 @@ import Game from './Game';
 const suggestion = {
   id: 102,
   name: 'Sam Same',
-  team: 'TEAM B',
-  debut_year: '1980',
-  retirement_year: '1990',
 };
 const originalFetch = global.fetch;
 let guessRequest;
@@ -17,7 +14,7 @@ describe('Game player guesses', () => {
     jest.useFakeTimers();
     guessRequest = null;
     global.fetch = jest.fn((url, options) => {
-      if (url === '/api/start') {
+      if (url.startsWith('/api/start')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({ hint: 'slashline' }),
@@ -51,7 +48,7 @@ describe('Game player guesses', () => {
     global.fetch = originalFetch;
   });
 
-  test('submits the selected suggestion ID while keeping the input name-only', async () => {
+  test('submits the selected suggestion ID with the active mode', async () => {
     render(<Game />);
     await act(async () => {
       await Promise.resolve();
@@ -67,7 +64,7 @@ describe('Game player guesses', () => {
       await Promise.resolve();
     });
 
-    fireEvent.mouseDown(screen.getByText('TEAM B · Debut 1980 · Retired 1990').closest('li'));
+    fireEvent.mouseDown(screen.getByText('Sam Same').closest('li'));
     expect(input).toHaveValue('Sam Same');
 
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
@@ -76,7 +73,7 @@ describe('Game player guesses', () => {
       await Promise.resolve();
     });
 
-    expect(JSON.parse(guessRequest.body)).toEqual({ id: 102 });
+    expect(JSON.parse(guessRequest.body)).toEqual({ id: 102, mode: 'all-time' });
   });
 
   test('continues submitting typed guesses by name', async () => {
@@ -95,6 +92,6 @@ describe('Game player guesses', () => {
       await Promise.resolve();
     });
 
-    expect(JSON.parse(guessRequest.body)).toEqual({ name: 'Sam Same' });
+    expect(JSON.parse(guessRequest.body)).toEqual({ name: 'Sam Same', mode: 'all-time' });
   });
 });
