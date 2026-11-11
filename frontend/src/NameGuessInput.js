@@ -136,9 +136,9 @@ export function NameGuessInput({
               style={{ padding: '8px', cursor: 'pointer', color: 'black', listStyle: 'none' }}
             >
               <span>{player.name}</span>
-              {(player.team || player.debut_year || player.retirement_year) && (
+              {(player.position || player.debut || player.retirement) && (
                 <small style={{ display: 'block', color: '#555' }}>
-                  {player.team || 'Team not listed'} · {player.debut_year || 'unknown'} · {player.retirement_year === 'Not Found' ? 'Active' : player.retirement_year || 'unknown'}
+                  {player.position || 'Position unavailable'} · {player.team || 'Team unavailable'}  · {player.debut || 'unknown'} · {player.retirement === 'Not Found' ? 'Active' : player.retirement || 'unknown'}
                 </small>
               )}
             </li>
