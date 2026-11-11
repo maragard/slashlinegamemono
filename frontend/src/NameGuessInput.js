@@ -1,31 +1,57 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-export function NameGuessInput({ value, onChange, incorrectGuesses }) {
+export function NameGuessInput({
+  value,
+  onChange,
+  onPlayerSelect = () => {},
+  pastGuesses = [],
+  incorrectGuesses = [],
+  mode = 'all-time',
+  disabled = false,
+}) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionCache = useRef(new Map());
-  const incorrectGuessNames = new Set(
-    incorrectGuesses.map((guess) => guess.trim().toLowerCase())
+  const guessesToExclude = [...pastGuesses, ...incorrectGuesses];
+  const pastGuessIds = new Set(
+    guessesToExclude
+      .filter((guess) => typeof guess === 'object' && guess.id != null)
+      .map((guess) => guess.id)
+  );
+  const pastGuessNames = new Set(
+    guessesToExclude
+      .filter((guess) => typeof guess === 'string' || guess.id == null)
+      .map((guess) => (typeof guess === 'string' ? guess : guess.name).trim().toLowerCase())
   );
   const filteredSuggestions = suggestions
-    .filter((name) => !incorrectGuessNames.has(name.trim().toLowerCase()))
+    .filter((player) => (
+      !pastGuessIds.has(player.id) &&
+      !pastGuessNames.has(player.name.trim().toLowerCase())
+    ))
     .slice(0, 8);
 
   useEffect(() => {
-    const query = value.trim();
+    setSuggestions([]);
+    const query = disabled ? '' : value.trim();
     if (query.length < 3) {
-      setSuggestions([]);
+      if (disabled) {
+        setShowSuggestions(false);
+      }
       return;
     }
 
     let isCurrentQuery = true;
     const delayDebounceTimer = setTimeout(() => {
-      const cachedResult = suggestionCache.current.get(query);
+      const cacheKey = `${mode}:${query}`;
+      const cachedResult = suggestionCache.current.get(cacheKey);
       const headers = cachedResult?.etag
         ? { 'If-None-Match': cachedResult.etag }
         : {};
 
-      fetch(`/api/suggest?q=${encodeURIComponent(query)}`, { headers })
+      fetch(
+        `/api/suggest?q=${encodeURIComponent(query)}&mode=${encodeURIComponent(mode)}`,
+        { headers }
+      )
         .then(async (response) => {
           if (response.status === 304) {
             if (!cachedResult) {
@@ -39,11 +65,23 @@ export function NameGuessInput({ value, onChange, incorrectGuesses }) {
           }
 
           const data = await response.json();
-          suggestionCache.current.set(query, {
-            suggestions: data,
+          if (!Array.isArray(data)) {
+            throw new Error('Suggestion response must be an array.');
+          }
+          const playerSuggestions = data.map((player) => {
+            if (typeof player === 'string') {
+              return { name: player };
+            }
+            if (player && typeof player === 'object' && typeof player.name === 'string') {
+              return player;
+            }
+            throw new Error('Suggestion response contains an invalid player record.');
+          });
+          suggestionCache.current.set(cacheKey, {
+            suggestions: playerSuggestions,
             etag: response.headers.get('ETag'),
           });
-          return data;
+          return playerSuggestions;
         })
         .then((data) => {
           if (isCurrentQuery) {
@@ -61,15 +99,17 @@ export function NameGuessInput({ value, onChange, incorrectGuesses }) {
       isCurrentQuery = false;
       clearTimeout(delayDebounceTimer);
     };
-  }, [value]);
+  }, [disabled, mode, value]);
 
   return (
     <div style={{ position: 'relative', width: '300px' }}>
       <input
         type="text"
         value={value}
+        disabled={disabled}
         onChange={(e) => {
           onChange(e.target.value);
+          onPlayerSelect(null);
           setShowSuggestions(true);
         }}
         onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
@@ -83,19 +123,25 @@ export function NameGuessInput({ value, onChange, incorrectGuesses }) {
         }}
       />
 
-      {showSuggestions && filteredSuggestions.length > 0 && (
+      {!disabled && showSuggestions && filteredSuggestions.length > 0 && (
         <ul style={{ position: 'absolute', background: 'white', border: '1px solid #ccc', width: '100%', zIndex: 10 }}>
-          {filteredSuggestions.map((name) => (
-            <ul 
-              key={name}
+          {filteredSuggestions.map((player, index) => (
+            <li
+              key={player.id ?? `${player.name}-${index}`}
               onMouseDown={() => {
-                onChange(name);
+                onChange(player.name);
+                onPlayerSelect(player.id ?? null);
                 setShowSuggestions(false);
               }}
-              style={{ padding: '8px', cursor: 'pointer', color: 'black' }}
+              style={{ padding: '8px', cursor: 'pointer', color: 'black', listStyle: 'none' }}
             >
-              {name}
-            </ul>
+              <span>{player.name}</span>
+              {(player.position || player.debut || player.retirement) && (
+                <small style={{ display: 'block', color: '#555' }}>
+                  {player.position || 'Position unavailable'} · {player.team || 'Team unavailable'}  · {player.debut || 'unknown'} · {player.retirement === 'Not Found' ? 'Active' : player.retirement || 'unknown'}
+                </small>
+              )}
+            </li>
           ))}
         </ul>
       )}
