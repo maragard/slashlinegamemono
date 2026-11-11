@@ -94,4 +94,38 @@ describe('Game player guesses', () => {
 
     expect(JSON.parse(guessRequest.body)).toEqual({ name: 'Sam Same', mode: 'all-time' });
   });
+
+  test('shows confetti after a successful guess and removes it when the effect ends', async () => {
+    global.fetch = jest.fn((url) => Promise.resolve({
+      ok: true,
+      json: async () => (url.startsWith('/api/start')
+        ? { hint: 'slashline' }
+        : {
+          success: true,
+          msg: 'You did it!',
+          player: { name: 'Target Player' },
+        }),
+    }));
+
+    render(<Game />);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('Guess a player...'), {
+      target: { value: 'Target Player' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+
+    expect(await screen.findByText('You did it!')).toBeInTheDocument();
+    const confetti = screen.getByTestId('game-confetti');
+    expect(confetti).toHaveAttribute('aria-hidden', 'true');
+    expect(confetti.children).toHaveLength(64);
+
+    act(() => {
+      jest.advanceTimersByTime(3500);
+    });
+    expect(screen.queryByTestId('game-confetti')).not.toBeInTheDocument();
+  });
 });
