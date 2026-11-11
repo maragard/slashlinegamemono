@@ -20,7 +20,7 @@ const players = [
 ];
 const originalFetch = global.fetch;
 
-function SuggestionInputHarness() {
+function SuggestionInputHarness({ mode = 'all-time', pastGuesses = [] }) {
   const [value, setValue] = useState('');
   const [selectedId, setSelectedId] = useState(null);
 
@@ -30,7 +30,8 @@ function SuggestionInputHarness() {
         value={value}
         onChange={setValue}
         onPlayerSelect={setSelectedId}
-        incorrectGuesses={[]}
+        pastGuesses={pastGuesses}
+        mode={mode}
       />
       <output data-testid="selected-id">{selectedId ?? ''}</output>
     </>
@@ -79,5 +80,37 @@ describe('NameGuessInput', () => {
       target: { value: 'Sam Sam' },
     });
     expect(screen.getByTestId('selected-id')).toBeEmptyDOMElement();
+  });
+
+  test('accepts name-only suggestions and sends the selected mode', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ['Sam Same'],
+      headers: { get: () => '"names-etag"' },
+    });
+
+    render(<SuggestionInputHarness mode="post-integration" />);
+    fireEvent.change(screen.getByPlaceholderText('Guess a player...'), {
+      target: { value: 'Sam' },
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const suggestion = screen.getByText('Sam Same');
+    expect(suggestion).toBeInTheDocument();
+    expect(screen.queryByText(/Team not listed/)).not.toBeInTheDocument();
+    fireEvent.mouseDown(suggestion.closest('li'));
+
+    expect(screen.getByPlaceholderText('Guess a player...')).toHaveValue('Sam Same');
+    expect(screen.getByTestId('selected-id')).toBeEmptyDOMElement();
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/suggest?q=Sam&mode=post-integration',
+      { headers: {} }
+    );
   });
 });
