@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager, closing
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqids import sqids
 from typing import Dict, List, Any
 from urllib.parse import parse_qs
 
@@ -280,10 +281,10 @@ def get_eligible_names(mode="all-time"):
     predicate, parameters = _pool_predicate(mode)
     with closing(_connect_db()) as conn:
         rows = conn.execute(
-            f"SELECT id, name FROM players WHERE {predicate} ORDER BY name ASC, id ASC",
+            f"SELECT id, name, position, debut_year, retirement_year, team FROM players WHERE {predicate} ORDER BY name ASC, id ASC",
             parameters,
         ).fetchall()
-    GLOBAL_NAMES_CACHE[mode] = [(row[0], row[1]) for row in rows]
+    GLOBAL_NAMES_CACHE[mode] = [(row[0], row[1], row[2], row[3], row[4], row[5]) for row in rows]
 
 ###############################################################################
 ##############               Application Setup                  ###############
@@ -479,9 +480,16 @@ def suggest_names(
     # Filter through RAM list
     for name in GLOBAL_NAMES_CACHE.get(mode, []):
         if query in name[1].lower():
-            matches.append({"id": name[0], "name": name[1]})
+            matches.append({
+                "id": name[0],
+                "name": name[1],
+                "position": name[2],
+                "debut": name[3],
+                "retirement": name[4],
+                "team": name[5]
+            })
         # Hard limit on returned elements protects your list
-        if len(matches) >= 15:  
+        if len(matches) >= 10:  
             break
 
     # 1. Serialize the content to a stable JSON string to generate a hash
