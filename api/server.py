@@ -6,6 +6,7 @@ import re
 import sqlite3
 import uvicorn
 from contextlib import asynccontextmanager, closing
+from datetime import date
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,17 +25,17 @@ GAME_MODES = {
     "all-time": {
         "name": "All Time",
         "years": "1871–Present (all players)",
-        "minimum_debut_year": None,
+        "era_start_year": None,
     },
     "post-integration": {
         "name": "Post-Integration",
         "years": "1950–Present",
-        "minimum_debut_year": 1950,
+        "era_start_year": 1950,
     },
     "30-team-era": {
         "name": "30 Team Era",
         "years": "1998–Present",
-        "minimum_debut_year": 1998,
+        "era_start_year": 1998,
     },
 }
 
@@ -54,10 +55,112 @@ def _game_mode(mode):
 
 
 def _pool_predicate(mode):
-    minimum_year = _game_mode(mode)["minimum_debut_year"]
-    if minimum_year is None:
+    era_start_year = _game_mode(mode)["era_start_year"]
+    if era_start_year is None:
         return "1 = 1", ()
-    return "CAST(debut_year AS INTEGER) >= ?", (minimum_year,)
+    return (
+        """
+        CAST(debut_year AS INTEGER) <= CAST(strftime('%Y', 'now') AS INTEGER)
+        AND (
+            CAST(retirement_year AS INTEGER) >= ?
+            OR retirement_year = 'Not Found'
+        )
+        """,
+        (era_start_year,),
+    )
+
+
+def _difficulty_ratings(mode, current_year=None):
+    """Rank the mode's players from easiest (1) to hardest (10)."""
+    predicate, parameters = _pool_predicate(mode)
+    with closing(_connect_db()) as conn:
+        players = conn.execute(
+            f"""
+            SELECT id, debut_year, retirement_year, plate_apps, avg, obp, slg
+            FROM players
+            WHERE {predicate}
+            """,
+            parameters,
+        ).fetchall()
+
+    if not players:
+        return {}
+
+    current_year = current_year or date.today().year
+
+    def number(value):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def average(values):
+        available = [value for value in values if value is not None]
+        return sum(available) / len(available) if available else None
+
+    def difficulty_penalty(value, mean):
+        if value is None or mean is None or mean <= 0:
+            return 0.5
+        return max(0.0, min(1.0, 1.0 - value / (2.0 * mean)))
+
+    normalized = []
+    for player_id, debut, retirement, plate_apps, avg, obp, slg in players:
+        debut_year = number(debut)
+        retirement_year = number(retirement)
+        plate_appearances = number(plate_apps)
+        on_base_percentage = number(obp)
+        slugging_percentage = number(slg)
+        last_active_year = (
+            current_year if retirement == "Not Found"
+            else retirement_year if retirement_year is not None
+            else debut_year
+        )
+        active_seasons = (
+            max(1, last_active_year - debut_year + 1)
+            if debut_year is not None and last_active_year is not None
+            else None
+        )
+        pa_per_season = (
+            plate_appearances / active_seasons
+            if plate_appearances is not None and active_seasons is not None
+            else None
+        )
+        ops = (
+            on_base_percentage + slugging_percentage
+            if on_base_percentage is not None and slugging_percentage is not None
+            else None
+        )
+        recency_penalty = (
+            max(0.0, min(1.0, (current_year - last_active_year) / (current_year - 1871)))
+            if last_active_year is not None
+            else 0.5
+        )
+        normalized.append({
+            "id": player_id,
+            "pa_per_season": pa_per_season,
+            "avg": number(avg),
+            "ops": ops,
+            "recency_penalty": recency_penalty,
+        })
+
+    mean_pa_per_season = average(player["pa_per_season"] for player in normalized)
+    mean_avg = average(player["avg"] for player in normalized)
+    mean_ops = average(player["ops"] for player in normalized)
+
+    for player in normalized:
+        player["score"] = (
+            0.40 * difficulty_penalty(player["pa_per_season"], mean_pa_per_season)
+            + 0.25 * player["recency_penalty"]
+            + 0.20 * difficulty_penalty(player["ops"], mean_ops)
+            + 0.15 * difficulty_penalty(player["avg"], mean_avg)
+        )
+
+    ranked = sorted(normalized, key=lambda player: (player["score"], player["id"]))
+    count = len(ranked)
+    return {
+        player["id"]: min(10, rank * 10 // count + 1)
+        for rank, player in enumerate(ranked)
+    }
 
 
 def _player_hints(player, target):
@@ -76,9 +179,12 @@ def _player_hints(player, target):
             return "correct"
 
         try:
+            year_difference = abs(int(guess_year) - int(target_year))
+            if year_difference <= 3:
+                return "close"
             if int(guess_year) // 10 == int(target_year) // 10:
                 return "decade"
-        except ValueError:
+        except (TypeError, ValueError):
             return None
 
         return None
@@ -94,11 +200,45 @@ def _player_hints(player, target):
             return "partial"
         return None
 
+    def compare_teams(guess_teams, target_teams):
+        def actual_teams(value):
+            return {
+                team for team in split_values(value)
+                if not re.fullmatch(r"\d+tm", team)
+            }
+
+        guess_values = actual_teams(guess_teams)
+        target_values = actual_teams(target_teams)
+        if not guess_values or not target_values:
+            return None
+        if guess_values == target_values:
+            return "correct"
+        if guess_values & target_values:
+            return "partial"
+        return None
+
+    def compare_positions(guess_positions, target_positions):
+        def display_positions(value):
+            return {
+                position for position in split_values(value)
+                if position != "pinch hitter"
+            }
+
+        guess_values = display_positions(guess_positions)
+        target_values = display_positions(target_positions)
+        if not guess_values or not target_values:
+            return None
+        if guess_values == target_values:
+            return "correct"
+        if guess_values & target_values:
+            return "partial"
+        return None
+
     return {
         "debut_year": compare_year(player[3], target[3]),
         "retirement_year": compare_year(player[4], target[4]),
-        "position": compare_values(player[2], target[2]),
-        "team": compare_values(player[1], target[1]),
+        "position": compare_positions(player[2], target[2]),
+        "team": compare_teams(player[1], target[1]),
     }
 
 
@@ -368,11 +508,15 @@ async def starting_info(mode: str = Query("all-time")):
     target = load_current_player(mode)
     if target is None:
         raise HTTPException(status_code=404, detail="No player is selected for this game mode.")
+    difficulty_rating = _difficulty_ratings(mode).get(target[0])
+    slashline = "/".join(target[-3:]).strip("'")
+    # slashline = re.sub(r"(?<!\d)0\.(?=\d)", ".", slashline)
     return JSONResponse(content={
-        "hint": "/".join(target[-3:]).strip("'"),
+        "hint": slashline,
         "mode": mode,
         "mode_name": game_mode["name"],
         "years": game_mode["years"],
+        "difficulty_rating": difficulty_rating,
     })
 
 
