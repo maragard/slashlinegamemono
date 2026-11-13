@@ -40,7 +40,7 @@ class PlayerSuggestionTests(unittest.TestCase):
         )
         self.connection.execute(
             """
-            INSERT INTO todays_player
+            INSERT INTO todays_players
             (mode, player_id, name, team, position, debut_year, retirement_year, avg, obp, slg)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -56,7 +56,7 @@ class PlayerSuggestionTests(unittest.TestCase):
         server.GLOBAL_NAMES_CACHE = self.original_names_cache
 
     def test_suggestions_distinguish_players_with_identical_names(self):
-        response = server.suggest_names(StubRequest(), q="Sam")
+        response = server.suggest_names(StubRequest(), q="Sam", mode="all-time")
         suggestions = json.loads(response.body)
 
         self.assertEqual(
