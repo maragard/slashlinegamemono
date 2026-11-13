@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 export function NameGuessInput({
   value,
   onChange,
+  inputRef,
   onPlayerSelect = () => {},
   pastGuesses = [],
   incorrectGuesses = [],
@@ -104,6 +105,7 @@ export function NameGuessInput({
   return (
     <div style={{ position: 'relative', width: '300px' }}>
       <input
+        ref={inputRef}
         type="text"
         value={value}
         disabled={disabled}
