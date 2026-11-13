@@ -105,6 +105,36 @@
   color: #fff;
 }
 
+.game-clue-row {
+  position: relative;
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+}
+
+.game-clue-row h1 {
+  margin-top: 0;
+  text-align: center;
+}
+
+.game-difficulty-wrap {
+  position: absolute;
+  right: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.game-difficulty {
+  padding: 6px 12px;
+  border: 1px solid #576575;
+  border-radius: 6px;
+  background: #27333f;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .game-form {
   display: flex;
   justify-content: center;
@@ -321,6 +351,11 @@
   }
 
   .game-mode-years {
+    font-size: 12px;
+  }
+
+  .game-difficulty {
+    padding: 5px 8px;
     font-size: 12px;
   }
 
