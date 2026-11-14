@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NameGuessInput } from './NameGuessInput';
 import { PopupFrame } from './PopupFrame.js';
 import { PastGuesses, RevealedPlayer } from './PastGuesses';
@@ -14,6 +14,15 @@ const GAME_MODES = [
   { id: 'post-integration', name: 'Post-Integration', years: '1950–Present' },
   { id: '30-team-era', name: '30 Team Era', years: '1998–Present' },
 ];
+const CONFETTI_COLORS = ['#60a5fa', '#f472b6', '#facc15', '#4ade80', '#c084fc', '#fb923c'];
+const CONFETTI_PIECES = Array.from({ length: 64 }, (_, index) => ({
+  left: `${(index * 37) % 100}%`,
+  backgroundColor: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
+  animationDelay: `${(index % 12) * 0.035}s`,
+  animationDuration: `${2.5 + (index % 8) * 0.1}s`,
+  '--confetti-drift': `${((index * 17) % 61) - 30}vw`,
+  '--confetti-rotation': `${(index % 2 === 0 ? 1 : -1) * (360 + index * 43)}deg`,
+}));
 
 export default function Game() {
   const [selectedMode, setSelectedMode] = useState(GAME_MODES[0].id);
@@ -24,12 +33,10 @@ export default function Game() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [startHint, setStartHint] = useState('Loading hint...');
-  const [difficultyRatings, setDifficultyRatings] = useState({});
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [duplicateCandidates, setDuplicateCandidates] = useState([]);
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
-  const guessInputRef = useRef(null);
-  const shouldRefocusGuessInput = useRef(false);
+  const [confettiRun, setConfettiRun] = useState(0);
   const selectedModeDetails = GAME_MODES.find((mode) => mode.id === selectedMode);
   const activeGame = gameStates[selectedMode] || { result: null, pastGuesses: [] };
   const hasWon = Boolean(activeGame.result?.success);
@@ -42,13 +49,13 @@ export default function Game() {
   ];
 
   useEffect(() => {
-    if (!loading && shouldRefocusGuessInput.current) {
-      shouldRefocusGuessInput.current = false;
-      if (guessInputRef.current && !guessInputRef.current.disabled) {
-        guessInputRef.current.focus();
-      }
+    if (!confettiRun) {
+      return undefined;
     }
-  }, [loading, hasReachedGuessLimit, isRoundComplete]);
+
+    const timeout = setTimeout(() => setConfettiRun(0), 3500);
+    return () => clearTimeout(timeout);
+  }, [confettiRun]);
 
   const handleModeSelect = (mode) => {
     setSelectedMode(mode);
@@ -84,10 +91,6 @@ export default function Game() {
         const data = await response.json();
         if (isMounted) {
           setStartHint(data?.hint || 'No hint available.');
-          setDifficultyRatings((ratings) => ({
-            ...ratings,
-            [selectedMode]: data?.difficulty_rating,
-          }));
         }
       } catch (err) {
         if (isMounted) {
@@ -115,7 +118,6 @@ export default function Game() {
       return;
     }
     setLoading(true);
-    shouldRefocusGuessInput.current = true;
     setError('');
     setGameStates((states) => ({
       ...states,
@@ -153,6 +155,10 @@ export default function Game() {
         throw new Error(
           'Player not found in our database. Please choose a player from the suggestions.'
         );
+      }
+
+      if (data.success) {
+        setConfettiRun((run) => run + 1);
       }
 
       setDuplicateCandidates([]);
@@ -249,6 +255,22 @@ export default function Game() {
 
   return (
     <div className="game-shell">
+      {confettiRun > 0 && (
+        <div
+          key={confettiRun}
+          className="game-confetti"
+          data-testid="game-confetti"
+          aria-hidden="true"
+        >
+          {CONFETTI_PIECES.map((piece, index) => (
+            <span
+              key={index}
+              className="game-confetti__piece"
+              style={piece}
+            />
+          ))}
+        </div>
+      )}
       <nav className="game-mode-bar" aria-label="Game modes">
         <span className="game-brand">
           <img src={baseball} alt="" />
@@ -288,23 +310,12 @@ export default function Game() {
           <li>Guess a player based on the given slashline.</li>
           <li>Only players who have more than 1000 plate appearances are eligible.</li>
           <li>You have nine guesses per mode. After that, start Free Play to make unlimited additional guesses on a separate board.</li>
-          <li>Difficulty ranges from 1 (easiest) to 10 (hardest) and compares the player with others in the selected era. More recent careers, more plate appearances per active season, and stronger batting stats generally mean an easier rating.</li>
-          <li>Yellow means a debut or retirement year is within 3 years of the target year.</li>
           <li>Orange means a year is in the same decade, but not an exact year, or some positions or teams overlap.</li>
           <li>Green means the year matches exactly, or the full position or team list matches.</li>
         </ol>
       </PopupFrame>
       <main className="game-panel">
-        <div className="game-clue-row">
-          <h1 style={{ margin: '0 0 12px', fontSize: '28px' }}>{startHint}</h1>
-          <div className="game-difficulty-wrap">
-            {difficultyRatings[selectedMode] != null && (
-              <div className="game-difficulty" role="status" aria-label="Player difficulty">
-                Difficulty: {difficultyRatings[selectedMode]}/10
-              </div>
-            )}
-          </div>
-        </div>
+        <h1 style={{ marginBottom: '12px', fontSize: '28px' }}>{startHint}</h1>
         <h2 style={{ marginBottom: '20px' }}>Who's That Player?</h2>
 
         {hasWon ? (
@@ -324,7 +335,6 @@ export default function Game() {
             </span>
             <NameGuessInput
               value={playerName}
-              inputRef={guessInputRef}
               onChange={(name) => {
                 setPlayerName(name);
                 setSelectedPlayerId(null);
@@ -418,7 +428,6 @@ export default function Game() {
             guesses={activeGame.freePlayGuesses || []}
             title="Free Play"
             minimumRows={0}
-            guessLimit={null}
           />
         )}
       </main>

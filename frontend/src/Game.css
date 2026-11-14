@@ -2,6 +2,41 @@
   flex: 1;
 }
 
+.game-confetti {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.game-confetti__piece {
+  position: absolute;
+  top: -16px;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  animation: game-confetti-fall 3.2s ease-in forwards;
+}
+
+@keyframes game-confetti-fall {
+  from {
+    opacity: 1;
+    transform: translate3d(0, -5vh, 0) rotate(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(var(--confetti-drift), 110vh, 0) rotate(var(--confetti-rotation));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-confetti {
+    display: none;
+  }
+}
+
 .game-mode-bar {
   position: sticky;
   top: 0;

@@ -541,38 +541,38 @@ async def guess_player(request: Request):
     if unique_id is None and not guess_name:
         return PlainTextResponse("Missing necessary fields", status_code=400)
 
-    if guess_name:
-        with closing(_connect_db()) as conn:
-            players = conn.execute(
-                f"""
-                SELECT id, name, team, position, debut_year, retirement_year,
-                       plate_apps, avg, obp, slg
-                FROM players
-                WHERE ({predicate}) AND name = ? COLLATE NOCASE
-                """,
-                (*parameters, guess_name.strip()),
-            ).fetchall()
+    # if guess_name:
+    #     with closing(_connect_db()) as conn:
+    #         players = conn.execute(
+    #             f"""
+    #             SELECT id, name, team, position, debut_year, retirement_year,
+    #                    plate_apps, avg, obp, slg
+    #             FROM players
+    #             WHERE ({predicate}) AND name = ? COLLATE NOCASE
+    #             """,
+    #             (*parameters, guess_name.strip()),
+    #         ).fetchall()
 
-        if not players:
-            raise HTTPException(
-                status_code=404,
-                detail="Player not found in this game mode. Please choose a player from the suggestions.",
-            )
+    #     if not players:
+    #         raise HTTPException(
+    #             status_code=404,
+    #             detail="Player not found in this game mode. Please choose a player from the suggestions.",
+    #         )
 
-        if len(players) > 1:
-            return JSONResponse(
-                status_code=409,
-                content={
-                    "detail": "Multiple players have that name. Choose the correct player.",
-                    "candidates": [
-                        _player_info(record[0], record[1:])
-                        for record in players
-                    ],
-                },
-                headers={"X-Player-Candidates": "available"},
-            )
-        unique_id, *player = players[0]
-    elif unique_id is not None:
+    #     if len(players) > 1:
+    #         return JSONResponse(
+    #             status_code=409,
+    #             content={
+    #                 "detail": "Multiple players have that name. Choose the correct player.",
+    #                 "candidates": [
+    #                     _player_info(record[0], record[1:])
+    #                     for record in players
+    #                 ],
+    #             },
+    #             headers={"X-Player-Candidates": "available"},
+    #         )
+    #     unique_id, *player = players[0]
+    if unique_id is not None:
         with closing(_connect_db()) as conn:
             record = conn.execute(
                 f"""
@@ -587,12 +587,14 @@ async def guess_player(request: Request):
         if not record:
             raise HTTPException(status_code=404, detail="Player not found in this game mode.")
         unique_id, *player = record
+        if player[0] != guess_name:
+            raise HTTPException(status_code=500, detail="Discrepancy between player submitted and player received")
     else:
         raise HTTPException(status_code=400, detail="Missing player name or ID.")
 
     target = load_current_player(mode)
     if target is None:
-        raise HTTPException(status_code=404, detail="No player is selected for this game mode.")
+        raise HTTPException(status_code=500, detail="No player is selected for this game mode.")
     player_info = _player_info(unique_id, player)
     hints = _player_hints(player, target[1:])
     success = int(unique_id) == int(target[0])
