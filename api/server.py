@@ -1,4 +1,3 @@
-import csv
 import hashlib
 import json
 import os
@@ -13,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqids import sqids
 from typing import Dict, List, Any
 from urllib.parse import parse_qs
+
+from database import initialize_database
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_URI = "file:players?mode=memory&cache=shared"
@@ -262,91 +263,7 @@ def _player_info(player_id, player):
 ###############################################################################
 
 def init_db(csv_path=CSV_PATH):
-    """
-    Setup database with data from players.csv
-
-    Returns None
-    """
-    with closing(_connect_db()) as conn:
-        curr = conn.cursor()
-
-        curr.execute(
-            """
-            CREATE TABLE IF NOT EXISTS players (
-                id INTEGER PRIMARY KEY,
-                name TEXT,
-                team TEXT,
-                position TEXT,
-                debut_year TEXT,
-                retirement_year TEXT,
-                plate_apps TEXT,
-                avg TEXT,
-                obp TEXT,
-                slg TEXT
-            )
-            """
-        )
-
-        curr.execute(
-            """
-            CREATE TABLE IF NOT EXISTS todays_players (
-                mode TEXT PRIMARY KEY,
-                player_id INTEGER,
-                name TEXT,
-                team TEXT,
-                position TEXT,
-                debut_year TEXT,
-                retirement_year TEXT,
-                avg TEXT,
-                obp TEXT,
-                slg TEXT
-            )
-            """
-        )
-
-        curr.execute("SELECT COUNT(1) FROM players")
-        count = curr.fetchone()[0]
-
-        if count == 0 and os.path.exists(csv_path):
-            with open(csv_path, newline="", encoding="utf-8") as file:
-                for row in csv.DictReader(file):
-                    player_id = int(row["id"]) if row.get("id") else None
-                    values = (
-                        row.get("Player Name"),
-                        row.get("Team(s)"),
-                        row.get("Position(s)"),
-                        row.get("Debut Year"),
-                        row.get("Retirement Year"),
-                        row.get("PA"),
-                        row.get("AVG"),
-                        row.get("OBP"),
-                        row.get("SLG"),
-                    )
-
-                    if player_id is None:
-                        curr.execute(
-                            """
-                            INSERT INTO players
-                            (name, team, position, debut_year, retirement_year,
-                            plate_apps, avg, obp, slg)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            values,
-                        )
-                    else:
-                        curr.execute(
-                            """
-                            INSERT OR REPLACE INTO players
-                            (id, name, team, position, debut_year, retirement_year,
-                            plate_apps, avg, obp, slg)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (player_id, *values),
-                        )
-
-            conn.commit()
-    return
-
+    initialize_database(_connect_db, csv_path)
 
 def select_new_player(mode="all-time"):
     """Choose a random player from the selected mode's pool."""
