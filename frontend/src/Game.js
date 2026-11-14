@@ -14,6 +14,15 @@ const GAME_MODES = [
   { id: 'post-integration', name: 'Post-Integration', years: '1950–Present' },
   { id: '30-team-era', name: '30 Team Era', years: '1998–Present' },
 ];
+const CONFETTI_COLORS = ['#60a5fa', '#f472b6', '#facc15', '#4ade80', '#c084fc', '#fb923c'];
+const CONFETTI_PIECES = Array.from({ length: 64 }, (_, index) => ({
+  left: `${(index * 37) % 100}%`,
+  backgroundColor: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
+  animationDelay: `${(index % 12) * 0.035}s`,
+  animationDuration: `${2.5 + (index % 8) * 0.1}s`,
+  '--confetti-drift': `${((index * 17) % 61) - 30}vw`,
+  '--confetti-rotation': `${(index % 2 === 0 ? 1 : -1) * (360 + index * 43)}deg`,
+}));
 
 export default function Game() {
   const [selectedMode, setSelectedMode] = useState(GAME_MODES[0].id);
@@ -27,6 +36,7 @@ export default function Game() {
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [duplicateCandidates, setDuplicateCandidates] = useState([]);
   const [selectedPlayerId, setSelectedPlayerId] = useState(null);
+  const [confettiRun, setConfettiRun] = useState(0);
   const selectedModeDetails = GAME_MODES.find((mode) => mode.id === selectedMode);
   const activeGame = gameStates[selectedMode] || { result: null, pastGuesses: [] };
   const hasWon = Boolean(activeGame.result?.success);
@@ -37,6 +47,15 @@ export default function Game() {
     ...activeGame.pastGuesses,
     ...(activeGame.freePlayGuesses || []),
   ];
+
+  useEffect(() => {
+    if (!confettiRun) {
+      return undefined;
+    }
+
+    const timeout = setTimeout(() => setConfettiRun(0), 3500);
+    return () => clearTimeout(timeout);
+  }, [confettiRun]);
 
   const handleModeSelect = (mode) => {
     setSelectedMode(mode);
@@ -138,6 +157,10 @@ export default function Game() {
         );
       }
 
+      if (data.success) {
+        setConfettiRun((run) => run + 1);
+      }
+
       setDuplicateCandidates([]);
       setGameStates((states) => {
         const game = states[selectedMode] || { result: null, pastGuesses: [] };
@@ -232,6 +255,22 @@ export default function Game() {
 
   return (
     <div className="game-shell">
+      {confettiRun > 0 && (
+        <div
+          key={confettiRun}
+          className="game-confetti"
+          data-testid="game-confetti"
+          aria-hidden="true"
+        >
+          {CONFETTI_PIECES.map((piece, index) => (
+            <span
+              key={index}
+              className="game-confetti__piece"
+              style={piece}
+            />
+          ))}
+        </div>
+      )}
       <nav className="game-mode-bar" aria-label="Game modes">
         <span className="game-brand">
           <img src={baseball} alt="" />

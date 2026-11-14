@@ -2,6 +2,41 @@
   flex: 1;
 }
 
+.game-confetti {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.game-confetti__piece {
+  position: absolute;
+  top: -16px;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  animation: game-confetti-fall 3.2s ease-in forwards;
+}
+
+@keyframes game-confetti-fall {
+  from {
+    opacity: 1;
+    transform: translate3d(0, -5vh, 0) rotate(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(var(--confetti-drift), 110vh, 0) rotate(var(--confetti-rotation));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-confetti {
+    display: none;
+  }
+}
+
 .game-mode-bar {
   position: sticky;
   top: 0;
@@ -103,6 +138,36 @@
 .game-panel h1,
 .game-panel h2 {
   color: #fff;
+}
+
+.game-clue-row {
+  position: relative;
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+}
+
+.game-clue-row h1 {
+  margin-top: 0;
+  text-align: center;
+}
+
+.game-difficulty-wrap {
+  position: absolute;
+  right: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.game-difficulty {
+  padding: 6px 12px;
+  border: 1px solid #576575;
+  border-radius: 6px;
+  background: #27333f;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .game-form {
@@ -321,6 +386,11 @@
   }
 
   .game-mode-years {
+    font-size: 12px;
+  }
+
+  .game-difficulty {
+    padding: 5px 8px;
     font-size: 12px;
   }
 
