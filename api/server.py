@@ -5,15 +5,13 @@ import re
 import sqlite3
 import uvicorn
 from contextlib import asynccontextmanager, closing
+from database import initialize_database
 from datetime import date
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqids import sqids
 from typing import Dict, List, Any
-from urllib.parse import parse_qs
-
-from database import initialize_database
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_URI = "file:players?mode=memory&cache=shared"
@@ -45,7 +43,7 @@ GAME_MODES = {
 ###############################################################################
 
 
-def _connect_db():
+def _connect_db() -> sqlite3.Connection:
     return sqlite3.connect(DB_URI, uri=True)
 
 
@@ -262,8 +260,8 @@ def _player_info(player_id, player):
 ##############                Database functions                ###############
 ###############################################################################
 
-def init_db(csv_path=CSV_PATH):
-    initialize_database(_connect_db, csv_path)
+async def init_db(csv_path=CSV_PATH):
+    await initialize_database(_connect_db, csv_path)
 
 def select_new_player(mode="all-time"):
     """Choose a random player from the selected mode's pool."""
@@ -355,7 +353,7 @@ async def lifecycle(app: FastAPI):
     """
     # on_event("startup"): setup backend
     database = _connect_db()
-    init_db()
+    await init_db()
     for mode in GAME_MODES:
         select_new_player(mode)
         get_eligible_names(mode)

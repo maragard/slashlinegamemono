@@ -4,30 +4,31 @@ import logging
 import os
 import sqlite3
 from contextlib import closing
-from urllib.error import URLError
-from urllib.request import urlopen
+from vercel import blob
 
 logger = logging.getLogger(__name__)
 
 
-def _load_csv_content(csv_path, blob_url):
+async def _load_csv_content(csv_path, blob_url):
     if blob_url:
         try:
-            with urlopen(blob_url, timeout=10) as response:
-                return response.read().decode("utf-8")
-        except (OSError, URLError, TimeoutError, ValueError) as error:
+            data_blob = await blob.get_blob(blob_url, access="private")
+            return data_blob.body.decode("utf-8")
+        except Exception as error:
             logger.warning(
-                "Could not load players CSV from Vercel Blob; falling back to local file: %s",
+                "Could not load players CSV from Vercel Blob; "
+                "falling back to local file %s: %s",
+                csv_path,
                 error,
             )
+        else:
+            logger.info("Read blob")
 
-    if os.path.exists(csv_path):
-        with open(csv_path, newline="", encoding="utf-8") as file:
-            return file.read()
-    return None
+    with open(csv_path, newline="", encoding="utf-8") as file:
+        return file.read()
 
 
-def initialize_database(connect_db, csv_path, blob_url=None):
+async def initialize_database(connect_db, csv_path, blob_url=None):
     """Create the application tables and load player data when the table is empty."""
     if blob_url is None:
         blob_url = os.environ.get("PLAYERS_CSV_BLOB_URL")
@@ -71,7 +72,11 @@ def initialize_database(connect_db, csv_path, blob_url=None):
 
         curr.execute("SELECT COUNT(1) FROM players")
         count = curr.fetchone()[0]
-        csv_content = _load_csv_content(csv_path, blob_url) if count == 0 else None
+        csv_content = (
+            await _load_csv_content(csv_path, blob_url)
+            if count == 0
+            else None
+        )
 
         if csv_content is not None:
             for row in csv.DictReader(io.StringIO(csv_content, newline="")):

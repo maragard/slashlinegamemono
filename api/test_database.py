@@ -1,11 +1,10 @@
-import io
 import os
 import sqlite3
 import tempfile
 import unittest
 import uuid
-from unittest.mock import patch
-from urllib.error import URLError
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import database
 
@@ -16,7 +15,7 @@ CSV_HEADER = (
 )
 
 
-class DatabaseInitializationTests(unittest.TestCase):
+class DatabaseInitializationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.db_uri = f"file:test_database_{uuid.uuid4().hex}?mode=memory&cache=shared"
         self.connection = sqlite3.connect(self.db_uri, uri=True)
@@ -36,34 +35,49 @@ class DatabaseInitializationTests(unittest.TestCase):
     def connect_db(self):
         return sqlite3.connect(self.db_uri, uri=True)
 
-    def test_loads_blob_csv_before_local_file(self):
+    async def test_loads_blob_csv_before_local_file(self):
         blob_csv = (
             CSV_HEADER
             + "2,Blob Player,BLOB,Catcher,2000,2010,200,.250,.350,.450\n"
         )
-        response = io.BytesIO(blob_csv.encode("utf-8"))
+        get_blob = AsyncMock(
+            return_value=SimpleNamespace(body=blob_csv.encode("utf-8"))
+        )
 
-        with patch("database.urlopen", return_value=response) as open_blob:
-            database.initialize_database(
+        with patch("database.blob.get_blob", get_blob):
+            await database.initialize_database(
                 self.connect_db, self.csv_file.name, "https://blob.example/players.csv"
             )
 
-        open_blob.assert_called_once_with(
-            "https://blob.example/players.csv", timeout=10
+        get_blob.assert_awaited_once_with(
+            "https://blob.example/players.csv", access="private"
         )
         players = self.connection.execute(
             "SELECT id, name FROM players ORDER BY id"
         ).fetchall()
         self.assertEqual(players, [(2, "Blob Player")])
 
-    def test_falls_back_to_local_csv_when_blob_is_unavailable(self):
-        with patch(
-            "database.urlopen", side_effect=URLError("Blob unavailable")
-        ):
-            database.initialize_database(
+    async def test_falls_back_to_local_csv_when_blob_fetch_fails(self):
+        get_blob = AsyncMock(side_effect=RuntimeError("Blob unavailable"))
+        with patch("database.blob.get_blob", get_blob):
+            await database.initialize_database(
                 self.connect_db, self.csv_file.name, "https://blob.example/players.csv"
             )
 
+        get_blob.assert_awaited_once_with(
+            "https://blob.example/players.csv", access="private"
+        )
+        players = self.connection.execute(
+            "SELECT id, name FROM players ORDER BY id"
+        ).fetchall()
+        self.assertEqual(players, [(1, "Local Player")])
+
+    async def test_uses_local_csv_when_blob_location_is_not_configured(self):
+        with patch.dict(os.environ, {"PLAYERS_CSV_BLOB_URL": ""}):
+            with patch("database.blob.get_blob", new_callable=AsyncMock) as get_blob:
+                await database.initialize_database(self.connect_db, self.csv_file.name)
+
+        get_blob.assert_not_awaited()
         players = self.connection.execute(
             "SELECT id, name FROM players ORDER BY id"
         ).fetchall()
