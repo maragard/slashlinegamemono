@@ -1,4 +1,3 @@
-import csv
 import hashlib
 import json
 import os
@@ -6,13 +5,13 @@ import re
 import sqlite3
 import uvicorn
 from contextlib import asynccontextmanager, closing
+from database import initialize_database
 from datetime import date
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqids import sqids
 from typing import Dict, List, Any
-from urllib.parse import parse_qs
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_URI = "file:players?mode=memory&cache=shared"
@@ -44,7 +43,7 @@ GAME_MODES = {
 ###############################################################################
 
 
-def _connect_db():
+def _connect_db() -> sqlite3.Connection:
     return sqlite3.connect(DB_URI, uri=True)
 
 
@@ -261,92 +260,8 @@ def _player_info(player_id, player):
 ##############                Database functions                ###############
 ###############################################################################
 
-def init_db(csv_path=CSV_PATH):
-    """
-    Setup database with data from players.csv
-
-    Returns None
-    """
-    with closing(_connect_db()) as conn:
-        curr = conn.cursor()
-
-        curr.execute(
-            """
-            CREATE TABLE IF NOT EXISTS players (
-                id INTEGER PRIMARY KEY,
-                name TEXT,
-                team TEXT,
-                position TEXT,
-                debut_year TEXT,
-                retirement_year TEXT,
-                plate_apps TEXT,
-                avg TEXT,
-                obp TEXT,
-                slg TEXT
-            )
-            """
-        )
-
-        curr.execute(
-            """
-            CREATE TABLE IF NOT EXISTS todays_players (
-                mode TEXT PRIMARY KEY,
-                player_id INTEGER,
-                name TEXT,
-                team TEXT,
-                position TEXT,
-                debut_year TEXT,
-                retirement_year TEXT,
-                avg TEXT,
-                obp TEXT,
-                slg TEXT
-            )
-            """
-        )
-
-        curr.execute("SELECT COUNT(1) FROM players")
-        count = curr.fetchone()[0]
-
-        if count == 0 and os.path.exists(csv_path):
-            with open(csv_path, newline="", encoding="utf-8") as file:
-                for row in csv.DictReader(file):
-                    player_id = int(row["id"]) if row.get("id") else None
-                    values = (
-                        row.get("Player Name"),
-                        row.get("Team(s)"),
-                        row.get("Position(s)"),
-                        row.get("Debut Year"),
-                        row.get("Retirement Year"),
-                        row.get("PA"),
-                        row.get("AVG"),
-                        row.get("OBP"),
-                        row.get("SLG"),
-                    )
-
-                    if player_id is None:
-                        curr.execute(
-                            """
-                            INSERT INTO players
-                            (name, team, position, debut_year, retirement_year,
-                            plate_apps, avg, obp, slg)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            values,
-                        )
-                    else:
-                        curr.execute(
-                            """
-                            INSERT OR REPLACE INTO players
-                            (id, name, team, position, debut_year, retirement_year,
-                            plate_apps, avg, obp, slg)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (player_id, *values),
-                        )
-
-            conn.commit()
-    return
-
+async def init_db(csv_path=CSV_PATH):
+    await initialize_database(_connect_db, csv_path)
 
 def select_new_player(mode="all-time"):
     """Choose a random player from the selected mode's pool."""
@@ -438,7 +353,7 @@ async def lifecycle(app: FastAPI):
     """
     # on_event("startup"): setup backend
     database = _connect_db()
-    init_db()
+    await init_db()
     for mode in GAME_MODES:
         select_new_player(mode)
         get_eligible_names(mode)
