@@ -13,7 +13,7 @@ async def _load_csv_content(csv_path, blob_url):
     if blob_url:
         try:
             data_blob = await blob.get_blob(blob_url, access="private")
-            logger.info("Read blob")
+            print("Read blob")
             return data_blob.body.decode("utf-8")
         except Exception as error:
             logger.warning(
@@ -22,9 +22,11 @@ async def _load_csv_content(csv_path, blob_url):
                 csv_path,
                 error,
             )
-
-    with open(csv_path, newline="", encoding="utf-8") as file:
-        return file.read()
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as file:
+            return file.read()
+    except:
+        return None
 
 
 async def initialize_database(connect_db, csv_path, blob_url=None):
