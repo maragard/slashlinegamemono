@@ -352,6 +352,7 @@ async def lifecycle(app: FastAPI):
     in here, either before or after the keyword 'yield'.
     """
     # on_event("startup"): setup backend
+    print(os.environ.keys())
     database = _connect_db()
     await init_db()
     for mode in GAME_MODES:
