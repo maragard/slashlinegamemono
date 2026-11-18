@@ -7,6 +7,7 @@ import uvicorn
 from contextlib import asynccontextmanager, closing
 from database import initialize_database
 from datetime import date
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -352,7 +353,7 @@ async def lifecycle(app: FastAPI):
     in here, either before or after the keyword 'yield'.
     """
     # on_event("startup"): setup backend
-    print(os.environ.keys())
+    load_dotenv(".env.local")
     database = _connect_db()
     await init_db()
     for mode in GAME_MODES:
