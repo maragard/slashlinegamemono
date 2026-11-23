@@ -2,4 +2,4 @@ fastapi>=0.95.0
 vercel
 uvicorn==0.54.0
 sqids==0.5.2
-dotenv
+dotenv==0.9.9
