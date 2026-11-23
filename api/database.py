@@ -9,6 +9,12 @@ from vercel import blob
 logger = logging.getLogger(__name__)
 
 
+async def resolve_credentials() -> blob.BlobCredentials:
+    return blob.BlobCredentials(
+        token=os.environ["VERCEL_OIDC_TOKEN"],
+        store_id=os.environ["GAME_STORAGE_BLOB_STORE_ID"],
+    )
+
 async def _load_csv_content(csv_path, blob_url):
     if blob_url:
         try:
