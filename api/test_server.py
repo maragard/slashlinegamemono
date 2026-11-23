@@ -1,7 +1,9 @@
 import asyncio
 import json
+import os
 import unittest
 import uuid
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
@@ -23,7 +25,8 @@ class PlayerSuggestionTests(unittest.TestCase):
         self.original_names_cache = server.GLOBAL_NAMES_CACHE
         server.DB_URI = f"file:test_players_{uuid.uuid4().hex}?mode=memory&cache=shared"
         self.connection = server._connect_db()
-        server.init_db(csv_path="")
+        with patch.dict(os.environ, {"PLAYERS_CSV_BLOB_URL": ""}):
+            asyncio.run(server.init_db(csv_path=os.devnull))
         self.connection.executemany(
             """
             INSERT INTO players

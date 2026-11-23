@@ -72,6 +72,16 @@ class DatabaseInitializationTests(unittest.IsolatedAsyncioTestCase):
         ).fetchall()
         self.assertEqual(players, [(1, "Local Player")])
 
+    async def test_reports_local_file_failure_after_blob_fetch_fails(self):
+        get_blob = AsyncMock(side_effect=RuntimeError("Blob unavailable"))
+        with patch("database.blob.get_blob", get_blob):
+            with self.assertRaises(FileNotFoundError):
+                await database.initialize_database(
+                    self.connect_db,
+                    self.csv_file.name + ".missing",
+                    "https://blob.example/players.csv",
+                )
+
     async def test_uses_local_csv_when_blob_location_is_not_configured(self):
         with patch.dict(os.environ, {"PLAYERS_CSV_BLOB_URL": ""}):
             with patch("database.blob.get_blob", new_callable=AsyncMock) as get_blob:
