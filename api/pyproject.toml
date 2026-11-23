@@ -4,7 +4,13 @@ version = "0.2.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "fastapi>=0.95.0",
+    "vercel>=0.5.0",
+    "uvicorn==0.54.0",
+    "sqids==0.5.2",
+    "dotenv==0.9.9",
+]
 
 [project.scripts]
 api = "server:app"
