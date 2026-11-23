@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 async def resolve_credentials() -> blob.BlobCredentials:
     return blob.BlobCredentials(
-        token=os.environ["VERCEL_OIDC_TOKEN"],
+        token=os.environ["GAME_STORAGE_BLOB_READ_WRITE_TOKEN"],
         store_id=os.environ["GAME_STORAGE_BLOB_STORE_ID"],
     )
 
