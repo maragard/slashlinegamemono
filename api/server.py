@@ -455,28 +455,23 @@ async def guess_player(request: Request):
     mode = data.get("mode", "all-time")
     predicate, parameters = _pool_predicate(mode)
 
-    if unique_id is None and not guess_name:
+    if not unique_id and not guess_name:
         return PlainTextResponse("Missing necessary fields", status_code=400)
 
-    if unique_id is not None:
-        with closing(_connect_db()) as conn:
-            record = conn.execute(
-                f"""
-                SELECT id, name, team, position, debut_year, retirement_year,
-                       plate_apps, avg, obp, slg
-                FROM players
-                WHERE ({predicate}) AND id = ?
-                """,
-                (*parameters, unique_id),
-            ).fetchone()
+    with closing(_connect_db()) as conn:
+        record = conn.execute(
+            f"""
+            SELECT id, name, team, position, debut_year, retirement_year,
+                    plate_apps, avg, obp, slg
+            FROM players
+            WHERE ({predicate}) AND id = ?
+            """,
+            (*parameters, unique_id),
+        ).fetchone()
 
-        if not record:
-            raise HTTPException(status_code=404, detail="Player not found in this game mode.")
-        unique_id, *player = record
-        if player[0] != guess_name:
-            raise HTTPException(status_code=500, detail="Discrepancy between player submitted and player received")
-    else:
-        raise HTTPException(status_code=400, detail="Missing player name or ID.")
+    if not record:
+        raise HTTPException(status_code=404, detail="Player not found in this game mode.")
+    unique_id, *player = record
 
     target = load_current_player(mode)
     if target is None:
