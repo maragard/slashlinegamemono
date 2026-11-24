@@ -1,4 +1,3 @@
-import csv
 import hashlib
 import json
 import os
@@ -6,13 +5,14 @@ import re
 import sqlite3
 import uvicorn
 from contextlib import asynccontextmanager, closing
+from database import initialize_database
 from datetime import date
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqids import sqids
 from typing import Dict, List, Any
-from urllib.parse import parse_qs
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_URI = "file:players?mode=memory&cache=shared"
@@ -44,7 +44,7 @@ GAME_MODES = {
 ###############################################################################
 
 
-def _connect_db():
+def _connect_db() -> sqlite3.Connection:
     return sqlite3.connect(DB_URI, uri=True)
 
 
@@ -261,92 +261,8 @@ def _player_info(player_id, player):
 ##############                Database functions                ###############
 ###############################################################################
 
-def init_db(csv_path=CSV_PATH):
-    """
-    Setup database with data from players.csv
-
-    Returns None
-    """
-    with closing(_connect_db()) as conn:
-        curr = conn.cursor()
-
-        curr.execute(
-            """
-            CREATE TABLE IF NOT EXISTS players (
-                id INTEGER PRIMARY KEY,
-                name TEXT,
-                team TEXT,
-                position TEXT,
-                debut_year TEXT,
-                retirement_year TEXT,
-                plate_apps TEXT,
-                avg TEXT,
-                obp TEXT,
-                slg TEXT
-            )
-            """
-        )
-
-        curr.execute(
-            """
-            CREATE TABLE IF NOT EXISTS todays_players (
-                mode TEXT PRIMARY KEY,
-                player_id INTEGER,
-                name TEXT,
-                team TEXT,
-                position TEXT,
-                debut_year TEXT,
-                retirement_year TEXT,
-                avg TEXT,
-                obp TEXT,
-                slg TEXT
-            )
-            """
-        )
-
-        curr.execute("SELECT COUNT(1) FROM players")
-        count = curr.fetchone()[0]
-
-        if count == 0 and os.path.exists(csv_path):
-            with open(csv_path, newline="", encoding="utf-8") as file:
-                for row in csv.DictReader(file):
-                    player_id = int(row["id"]) if row.get("id") else None
-                    values = (
-                        row.get("Player Name"),
-                        row.get("Team(s)"),
-                        row.get("Position(s)"),
-                        row.get("Debut Year"),
-                        row.get("Retirement Year"),
-                        row.get("PA"),
-                        row.get("AVG"),
-                        row.get("OBP"),
-                        row.get("SLG"),
-                    )
-
-                    if player_id is None:
-                        curr.execute(
-                            """
-                            INSERT INTO players
-                            (name, team, position, debut_year, retirement_year,
-                            plate_apps, avg, obp, slg)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            values,
-                        )
-                    else:
-                        curr.execute(
-                            """
-                            INSERT OR REPLACE INTO players
-                            (id, name, team, position, debut_year, retirement_year,
-                            plate_apps, avg, obp, slg)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (player_id, *values),
-                        )
-
-            conn.commit()
-    return
-
+async def init_db(csv_path=CSV_PATH):
+    await initialize_database(_connect_db, csv_path)
 
 def select_new_player(mode="all-time"):
     """Choose a random player from the selected mode's pool."""
@@ -437,8 +353,9 @@ async def lifecycle(app: FastAPI):
     in here, either before or after the keyword 'yield'.
     """
     # on_event("startup"): setup backend
+    load_dotenv(".env.local")
     database = _connect_db()
-    init_db()
+    await init_db()
     for mode in GAME_MODES:
         select_new_player(mode)
         get_eligible_names(mode)
@@ -538,59 +455,23 @@ async def guess_player(request: Request):
     mode = data.get("mode", "all-time")
     predicate, parameters = _pool_predicate(mode)
 
-    if unique_id is None and not guess_name:
+    if not unique_id and not guess_name:
         return PlainTextResponse("Missing necessary fields", status_code=400)
 
-    # if guess_name:
-    #     with closing(_connect_db()) as conn:
-    #         players = conn.execute(
-    #             f"""
-    #             SELECT id, name, team, position, debut_year, retirement_year,
-    #                    plate_apps, avg, obp, slg
-    #             FROM players
-    #             WHERE ({predicate}) AND name = ? COLLATE NOCASE
-    #             """,
-    #             (*parameters, guess_name.strip()),
-    #         ).fetchall()
+    with closing(_connect_db()) as conn:
+        record = conn.execute(
+            f"""
+            SELECT id, name, team, position, debut_year, retirement_year,
+                    plate_apps, avg, obp, slg
+            FROM players
+            WHERE ({predicate}) AND id = ?
+            """,
+            (*parameters, unique_id),
+        ).fetchone()
 
-    #     if not players:
-    #         raise HTTPException(
-    #             status_code=404,
-    #             detail="Player not found in this game mode. Please choose a player from the suggestions.",
-    #         )
-
-    #     if len(players) > 1:
-    #         return JSONResponse(
-    #             status_code=409,
-    #             content={
-    #                 "detail": "Multiple players have that name. Choose the correct player.",
-    #                 "candidates": [
-    #                     _player_info(record[0], record[1:])
-    #                     for record in players
-    #                 ],
-    #             },
-    #             headers={"X-Player-Candidates": "available"},
-    #         )
-    #     unique_id, *player = players[0]
-    if unique_id is not None:
-        with closing(_connect_db()) as conn:
-            record = conn.execute(
-                f"""
-                SELECT id, name, team, position, debut_year, retirement_year,
-                       plate_apps, avg, obp, slg
-                FROM players
-                WHERE ({predicate}) AND id = ?
-                """,
-                (*parameters, unique_id),
-            ).fetchone()
-
-        if not record:
-            raise HTTPException(status_code=404, detail="Player not found in this game mode.")
-        unique_id, *player = record
-        if player[0] != guess_name:
-            raise HTTPException(status_code=500, detail="Discrepancy between player submitted and player received")
-    else:
-        raise HTTPException(status_code=400, detail="Missing player name or ID.")
+    if not record:
+        raise HTTPException(status_code=404, detail="Player not found in this game mode.")
+    unique_id, *player = record
 
     target = load_current_player(mode)
     if target is None:
