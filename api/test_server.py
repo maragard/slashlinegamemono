@@ -7,6 +7,8 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
+from fastapi import HTTPException
+
 import server
 
 
