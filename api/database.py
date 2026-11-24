@@ -11,17 +11,17 @@ logger = logging.getLogger(__name__)
 
 def _resolve_credentials() -> blob.BlobCredentials:
     return blob.BlobCredentials(
-        token=os.environ["GAME_STORAGE_BLOB_READ_WRITE_TOKEN"],
+        token=os.environ["VERCEL_OIDC_TOKEN"],
         store_id=os.environ["GAME_STORAGE_BLOB_STORE_ID"],
     )
 
-async def _load_csv_content(csv_path, blob_url):
-    if blob_url:
+async def _load_csv_content(csv_path, blob_file_name):
+    if blob_file_name:
         try:
             options = blob.BlobServiceOptions(credentials_factory=_resolve_credentials)
             async with api.session(service_options=[options]):
-                data_blob = await blob.get_blob("players.csv", access="private")
-            print("Read blob")
+                data_blob = await blob.get_blob(blob_file_name, access="private")
+            print("Blob read successfully")
             return data_blob.body.decode("utf-8")
         except Exception as error:
             logger.warning(
@@ -37,10 +37,10 @@ async def _load_csv_content(csv_path, blob_url):
         return None
 
 
-async def initialize_database(connect_db, csv_path, blob_url=None):
+async def initialize_database(connect_db, csv_path, blob_file_name=None):
     """Create the application tables and load player data when the table is empty."""
-    if blob_url is None:
-        blob_url = os.environ.get("PLAYERS_CSV_BLOB_URL")
+    if blob_file_name is None:
+        blob_file_name = os.environ.get("STARTING_DATA_NAME")
 
     with closing(connect_db()) as conn:
         curr: sqlite3.Cursor = conn.cursor()
@@ -82,7 +82,7 @@ async def initialize_database(connect_db, csv_path, blob_url=None):
         curr.execute("SELECT COUNT(1) FROM players")
         count = curr.fetchone()[0]
         csv_content = (
-            await _load_csv_content(csv_path, blob_url)
+            await _load_csv_content(csv_path, blob_file_name)
             if count == 0
             else None
         )
