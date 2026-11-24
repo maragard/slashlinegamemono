@@ -17,8 +17,9 @@ async def _resolve_credentials() -> blob.BlobCredentials:
 
 async def _load_csv_content(csv_path, blob_url):
     if blob_url:
+        credentials = await _resolve_credentials()
         try:
-            options = blob.BlobServiceOptions(credentials_factory=_resolve_credentials())
+            options = blob.BlobServiceOptions(credentials_factory=credentials)
             async with api.session(service_options=[options]):
                 data_blob = await blob.get_blob(blob_url, access="private")
             print("Read blob")
