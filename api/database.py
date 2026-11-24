@@ -4,7 +4,7 @@ import logging
 import os
 import sqlite3
 from contextlib import closing
-from vercel import blob
+from vercel import blob, api
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +18,9 @@ async def _resolve_credentials() -> blob.BlobCredentials:
 async def _load_csv_content(csv_path, blob_url):
     if blob_url:
         try:
-            credentials = await _resolve_credentials()
-            data_blob = await blob.get_blob(
-                blob_url, access="private", credentials=credentials
-            )
+            options = blob.BlobServiceOptions(credentials_factory=_resolve_credentials())
+            async with api.session(service_options=[options]):
+                data_blob = await blob.get_blob(blob_url, access="private")
             print("Read blob")
             return data_blob.body.decode("utf-8")
         except Exception as error:
