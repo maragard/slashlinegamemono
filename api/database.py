@@ -20,7 +20,7 @@ async def _load_csv_content(csv_path, blob_url):
         try:
             options = blob.BlobServiceOptions(credentials_factory=_resolve_credentials)
             async with api.session(service_options=[options]):
-                data_blob = await blob.get_blob(blob_url, access="private")
+                data_blob = await blob.get_blob("players.csv", access="private")
             print("Read blob")
             return data_blob.body.decode("utf-8")
         except Exception as error:
