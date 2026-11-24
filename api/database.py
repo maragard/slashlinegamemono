@@ -9,7 +9,7 @@ from vercel import blob, api
 logger = logging.getLogger(__name__)
 
 
-async def _resolve_credentials() -> blob.BlobCredentials:
+def _resolve_credentials() -> blob.BlobCredentials:
     return blob.BlobCredentials(
         token=os.environ["GAME_STORAGE_BLOB_READ_WRITE_TOKEN"],
         store_id=os.environ["GAME_STORAGE_BLOB_STORE_ID"],
@@ -18,7 +18,7 @@ async def _resolve_credentials() -> blob.BlobCredentials:
 async def _load_csv_content(csv_path, blob_url):
     if blob_url:
         try:
-            options = await blob.BlobServiceOptions(credentials_factory=_resolve_credentials())
+            options = blob.BlobServiceOptions(credentials_factory=_resolve_credentials())
             async with api.session(service_options=[options]):
                 data_blob = await blob.get_blob(blob_url, access="private")
             print("Read blob")
